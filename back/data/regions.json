@@ -1,0 +1,101 @@
+[
+  {
+    "id": 1,
+    "name": "광주 충장로 상권",
+    "province": "광주",
+    "imageUrl": "https://images.unsplash.com/photo-1515741931357-2e1d0f2df5ff?auto=format&fit=crop&w=900&q=80",
+    "summary": "광주 중심 상권으로 쇼핑과 외식 수요가 함께 형성되는 지역입니다.",
+    "recommendedBusinesses": ["트렌드 카페", "디저트 테이크아웃", "편집형 소매점"],
+    "busyHours": ["평일 12:00-14:00", "평일 18:00-21:00", "주말 14:00-22:00"],
+    "targetCustomers": ["20-30대 방문객", "인근 직장인", "주말 유동 인구"],
+    "dataSource": "광주광역시 생활인구 공개자료(수집 연동 대상)"
+  },
+  {
+    "id": 2,
+    "name": "광주 상무지구 상권",
+    "province": "광주",
+    "imageUrl": "https://images.unsplash.com/photo-1467269204594-9661b134dd2b?auto=format&fit=crop&w=900&q=80",
+    "summary": "업무지구와 주거지가 혼재해 점심/저녁 수요가 모두 발생하는 지역입니다.",
+    "recommendedBusinesses": ["점심형 식당", "프리미엄 커피", "퇴근 후 모임 공간"],
+    "busyHours": ["평일 08:00-10:00", "평일 12:00-14:00", "평일 18:00-22:00"],
+    "targetCustomers": ["직장인", "인근 거주민", "저녁 모임 수요층"],
+    "dataSource": "광주광역시 상권분석 참고자료(연동 예정)"
+  },
+  {
+    "id": 3,
+    "name": "광주 양림동 상권",
+    "province": "광주",
+    "imageUrl": "https://images.unsplash.com/photo-1529429617124-aee711fad65f?auto=format&fit=crop&w=900&q=80",
+    "summary": "문화/관광 요소가 결합된 로컬 감성형 방문지 상권입니다.",
+    "recommendedBusinesses": ["브런치 카페", "로컬 굿즈 숍", "체험형 공방"],
+    "busyHours": ["주말 11:00-19:00", "공휴일 12:00-20:00"],
+    "targetCustomers": ["관광객", "로컬 탐방객", "커플/친구 방문객"],
+    "dataSource": "광주 문화관광 유동 데이터(연동 예정)"
+  },
+  {
+    "id": 4,
+    "name": "전남 여수 이순신광장 상권",
+    "province": "전남",
+    "imageUrl": "https://images.unsplash.com/photo-1530364858570-1b0d4f1f4d7f?auto=format&fit=crop&w=900&q=80",
+    "summary": "관광형 소비가 강한 대표 상권으로 야간 방문 비중이 높은 편입니다.",
+    "recommendedBusinesses": ["야간 디저트", "지역 특산품 숍", "관광형 F&B"],
+    "busyHours": ["주말 15:00-23:00", "성수기 11:00-23:00"],
+    "targetCustomers": ["국내 관광객", "가족 단위 여행객", "야간 방문객"],
+    "dataSource": "여수시 관광 통계 데이터(연동 대상)"
+  },
+  {
+    "id": 5,
+    "name": "전남 순천 연향동 상권",
+    "province": "전남",
+    "imageUrl": "https://images.unsplash.com/photo-1603899122634-f086ca5f5ddd?auto=format&fit=crop&w=900&q=80",
+    "summary": "생활권 소비와 외식 수요가 안정적으로 발생하는 지역 중심 상권입니다.",
+    "recommendedBusinesses": ["가성비 외식", "생활형 카페", "가족형 매장"],
+    "busyHours": ["평일 18:00-21:00", "주말 12:00-20:00"],
+    "targetCustomers": ["인근 거주민", "가족 단위 고객", "저녁 외식 고객"],
+    "dataSource": "순천시 상권 데이터(연동 대상)"
+  },
+  {
+    "id": 6,
+    "name": "전남 목포 평화광장 상권",
+    "province": "전남",
+    "imageUrl": "https://images.unsplash.com/photo-1470214203634-e436a8848e23?auto=format&fit=crop&w=900&q=80",
+    "summary": "해안 관광과 로컬 외식 수요가 동시에 존재하는 복합 상권입니다.",
+    "recommendedBusinesses": ["해산물 특화 매장", "야경형 카페", "관광 기념품 숍"],
+    "busyHours": ["주말 14:00-22:00", "성수기 12:00-23:00"],
+    "targetCustomers": ["관광객", "주말 나들이 고객", "로컬 가족 방문객"],
+    "dataSource": "목포시 생활관광 데이터(연동 대상)"
+  },
+  {
+    "id": 7,
+    "name": "전남 나주 혁신도시 상권",
+    "province": "전남",
+    "imageUrl": "https://images.unsplash.com/photo-1473448912268-2022ce9509d8?auto=format&fit=crop&w=900&q=80",
+    "summary": "공공기관 배후 수요가 있는 업무·주거 혼합형 상권입니다.",
+    "recommendedBusinesses": ["직장인 점심", "간편 저녁식", "예약형 서비스업"],
+    "busyHours": ["평일 08:00-10:00", "평일 12:00-14:00", "평일 18:00-20:00"],
+    "targetCustomers": ["직장인", "신도시 거주민", "평일 중심 방문객"],
+    "dataSource": "나주시 혁신도시 상권자료(연동 대상)"
+  },
+  {
+    "id": 8,
+    "name": "전남 담양 죽녹원 인근 상권",
+    "province": "전남",
+    "imageUrl": "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=900&q=80",
+    "summary": "관광 방문 시간대가 집중되는 체험형 로컬 상권입니다.",
+    "recommendedBusinesses": ["로컬 베이커리", "기념품/특산품", "체험형 디저트 카페"],
+    "busyHours": ["주말 11:00-18:00", "공휴일 11:00-19:00"],
+    "targetCustomers": ["가족 단위 여행객", "관광 버스 방문객", "커플 관광객"],
+    "dataSource": "담양군 관광 유입자료(연동 대상)"
+  },
+  {
+    "id": 9,
+    "name": "전남 광양 중마동 상권",
+    "province": "전남",
+    "imageUrl": "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=900&q=80",
+    "summary": "근로·주거 수요가 맞물린 생활 밀착형 소비 상권입니다.",
+    "recommendedBusinesses": ["배달 친화 외식", "야간 카페", "생활편의 서비스"],
+    "busyHours": ["평일 12:00-14:00", "평일 18:00-22:00", "주말 13:00-20:00"],
+    "targetCustomers": ["근로자", "인근 거주민", "야간 생활권 고객"],
+    "dataSource": "광양시 상권 참고 데이터(연동 대상)"
+  }
+]

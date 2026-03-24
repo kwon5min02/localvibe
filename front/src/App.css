@@ -1,0 +1,259 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  color: #111;
+  background-color: #f4f5f7;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  max-width: 1260px;
+  margin: 0 auto;
+  padding: 28px 24px 44px;
+}
+
+.top-title {
+  margin: 0 0 20px;
+  font-size: 44px;
+  font-weight: 900;
+  color: #000;
+}
+
+.chatbot-panel {
+  margin-bottom: 18px;
+  border: 1px solid #e2e5ec;
+  border-radius: 14px;
+  background: #fff;
+  padding: 14px;
+}
+
+.chatbot-title {
+  margin: 0 0 10px;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.chatbot-messages {
+  max-height: 220px;
+  overflow: auto;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.chatbot-message {
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.chatbot-message.user {
+  background: #1d1f22;
+  color: #fff;
+  justify-self: end;
+  max-width: 90%;
+}
+
+.chatbot-message.assistant {
+  background: #f3f5fa;
+  color: #1c1f24;
+  justify-self: start;
+  max-width: 100%;
+}
+
+.chatbot-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.chatbot-input {
+  height: 48px;
+  border: 1px solid #d8dde8;
+  border-radius: 10px;
+  padding: 0 12px;
+  outline: none;
+}
+
+.chatbot-send {
+  border: none;
+  border-radius: 10px;
+  padding: 0 14px;
+  background: #1f2329;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chatbot-send:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.gallery-scroll-area {
+  height: 78vh;
+  overflow: auto;
+  border: 1px solid #e2e4e9;
+  border-radius: 14px;
+  background: #fff;
+  padding: 14px;
+  cursor: grab;
+}
+
+.gallery-scroll-area:active {
+  cursor: grabbing;
+}
+
+.region-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(280px, 1fr));
+  gap: 16px;
+  min-width: 920px;
+}
+
+.region-card {
+  border: 1px solid #eceef2;
+  border-radius: 12px;
+  background: #fff;
+  padding: 0 0 10px;
+  overflow: hidden;
+  text-align: left;
+}
+
+.region-card:hover {
+  border-color: #5b7cff;
+}
+
+.region-preview {
+  display: block;
+  width: 100%;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.region-image {
+  width: 100%;
+  height: 240px;
+  object-fit: cover;
+  display: block;
+}
+
+.region-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px 0;
+}
+
+.region-name {
+  display: block;
+  font-weight: 700;
+  color: #17181a;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.modal-content {
+  position: relative;
+  width: min(860px, 95vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: 1px solid #e1e4ea;
+  background: #fff;
+  border-radius: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.modal-image {
+  width: 100%;
+  max-height: 420px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.modal-loading {
+  margin: 12px 0;
+  color: #4a67d9;
+  font-weight: 600;
+}
+
+.modal-source {
+  margin: 8px 0 12px;
+  font-size: 13px;
+  color: #5d6575;
+}
+
+.insight-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.insight-card {
+  border: 1px solid #e6e9f0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fbfcff;
+}
+
+.insight-card h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.insight-card ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+@media (max-width: 780px) {
+  .top-title {
+    font-size: 34px;
+  }
+
+  .gallery-scroll-area {
+    height: 72vh;
+  }
+
+  .region-grid {
+    grid-template-columns: repeat(2, minmax(260px, 1fr));
+    min-width: 620px;
+  }
+
+  .insight-grid {
+    grid-template-columns: 1fr;
+  }
+}

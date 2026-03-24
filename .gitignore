@@ -1,0 +1,25 @@
+.DS_Store
+
+# Node / frontend
+node_modules/
+dist/
+front/node_modules/
+front/dist/
+
+# Python / backend
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+back/.venv/
+back/.pycache/
+
+# Environment files
+.env
+.env.*
+back/.env
+
+# Cursor / IDE artifacts
+.cursor/
+*.swp
