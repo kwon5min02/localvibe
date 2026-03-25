@@ -116,6 +116,23 @@ export default function App() {
           setInsightRegion(null);
         }}
       />
+      <footer className="main-footer">
+        <div className="main-footer-top">
+          <div>
+            <div className="main-footer-brand">LocalVibe</div>
+            <div className="main-footer-desc">
+              Discover real local stories with AI and data-driven insights.
+            </div>
+          </div>
+          <div className="main-footer-links">
+            <span>Core Features</span>
+            <span>Pro Experience</span>
+            <span>Contact</span>
+            <span>Join</span>
+          </div>
+        </div>
+        <div className="main-footer-bottom">© 2026 LocalVibe. All rights reserved.</div>
+      </footer>
       <RegionModal
         region={insightRegion || selectedRegion}
         isLoading={isInsightLoading}

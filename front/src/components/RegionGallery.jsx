@@ -1,18 +1,8 @@
-import { useDragScroll } from "../hooks/useDragScroll";
-
 const CARD_IMAGE_FALLBACK = "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=900&q=80";
 
 export default function RegionGallery({ regions, onSelect }) {
-  const { onMouseDown, onMouseMove, onMouseUp } = useDragScroll();
-
   return (
-    <section
-      className="gallery-scroll-area"
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseUp}
-    >
+    <section className="gallery-scroll-area">
       <div className="region-grid">
         {regions.map((region) => (
           <article key={region.id} className="region-card">
