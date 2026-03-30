@@ -134,7 +134,7 @@ export default function TripPlannerPage({ regions = [] }) {
 
       {/* Main split-screen container */}
       <div className="trip-planner-main">
-        {/* Left: S-Curve Roadmap */}
+        {/* Left: Roadmap */}
         <div className="trip-planner-left">
           <div className="sroadmap-wrapper" id="roadmap-container">
             {roadmapLocations.length === 0 ? (
