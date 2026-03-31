@@ -602,16 +602,6 @@ body {
   border-color: #4a6fd9;
 }
 
-.export-pdf-btn {
-  border-color: #27ae60;
-  color: #27ae60;
-}
-
-.export-pdf-btn:hover:not(:disabled) {
-  background: #f0fff4;
-  border-color: #1e8449;
-}
-
 /* === Trip Chat Panel (for Trip Planner) === */
 .trip-chat-panel {
   display: flex;
