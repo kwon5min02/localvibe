@@ -1,26 +1,30 @@
-import { useEffect, useMemo, useState } from "react";
-import TopHeader from "./components/TopHeader";
-import ChatbotPanel from "./components/ChatbotPanel";
-import RegionGallery from "./components/RegionGallery";
-import RegionModal from "./components/RegionModal";
-import { defaultRegions } from "./data/defaultRegions";
+import { useEffect, useMemo, useState } from 'react';
+import TopHeader from './components/TopHeader';
+import ChatbotPanel from './components/ChatbotPanel';
+import RegionGallery from './components/RegionGallery';
+import RegionModal from './components/RegionModal';
+import { defaultRegions } from './data/defaultRegions';
+import TripPlannerPage from './pages/TripPlannerPage';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 const FEED_SIZE = 9;
 
 function normalizeTextKey(value) {
-  return String(value || "")
+  return String(value || '')
     .toLowerCase()
-    .replace(/\s+/g, "")
+    .replace(/\s+/g, '')
     .trim();
 }
 
 function normalizeImageKey(imageUrl) {
-  const value = String(imageUrl || "").trim().toLowerCase();
+  const value = String(imageUrl || '')
+    .trim()
+    .toLowerCase();
   if (!value) {
-    return "";
+    return '';
   }
-  return value.replace(/^https?:/, "");
+  return value.replace(/^https?:/, '');
 }
 
 function pickFeedItems(items, size = FEED_SIZE) {
@@ -74,6 +78,7 @@ export default function App() {
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [insightRegion, setInsightRegion] = useState(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('gallery'); // "gallery" or "planner"
 
   useEffect(() => {
     let isMounted = true;
@@ -86,7 +91,11 @@ export default function App() {
         }
 
         const data = await response.json();
-        if (isMounted && Array.isArray(data?.regions) && data.regions.length > 0) {
+        if (
+          isMounted &&
+          Array.isArray(data?.regions) &&
+          data.regions.length > 0
+        ) {
           setRegions(data.regions);
           setDisplayedRegions(pickFeedItems(data.regions));
         }
@@ -113,7 +122,9 @@ export default function App() {
 
       setIsInsightLoading(true);
       try {
-        const response = await fetch(`${API_BASE_URL}/api/regions/${selectedRegion.id}/insight`);
+        const response = await fetch(
+          `${API_BASE_URL}/api/regions/${selectedRegion.id}/insight`,
+        );
         if (!response.ok) {
           return;
         }
@@ -139,15 +150,17 @@ export default function App() {
   }, [selectedRegion]);
 
   const regionMap = useMemo(() => {
-    return new Map(regions.map((region) => [region.id, region]));
+    return new Map(regions.map(region => [region.id, region]));
   }, [regions]);
 
-  const handleRecommendFeed = (recommendedIds) => {
+  const handleRecommendFeed = recommendedIds => {
     if (!Array.isArray(recommendedIds) || recommendedIds.length === 0) {
       return;
     }
 
-    const selected = recommendedIds.map((id) => regionMap.get(Number(id))).filter(Boolean);
+    const selected = recommendedIds
+      .map(id => regionMap.get(Number(id)))
+      .filter(Boolean);
     if (selected.length === 0) {
       return;
     }
@@ -169,7 +182,7 @@ export default function App() {
       return;
     }
 
-    const remaining = regions.filter((item) => !selectedIdSet.has(item.id));
+    const remaining = regions.filter(item => !selectedIdSet.has(item.id));
     const fillCount = FEED_SIZE - uniqueSelected.length;
     const filler = pickFeedItems(remaining, fillCount);
     setDisplayedRegions([...uniqueSelected, ...filler].slice(0, FEED_SIZE));
@@ -178,14 +191,39 @@ export default function App() {
   return (
     <main className="app-shell">
       <TopHeader />
-      <ChatbotPanel onRecommendFeed={handleRecommendFeed} />
-      <RegionGallery
-        regions={displayedRegions.slice(0, FEED_SIZE)}
-        onSelect={(region) => {
-          setSelectedRegion(region);
-          setInsightRegion(null);
-        }}
-      />
+
+      {/* Tab Navigation */}
+      <div className="app-tabs">
+        <button
+          className={`app-tab ${activeTab === 'gallery' ? 'active' : ''}`}
+          onClick={() => setActiveTab('gallery')}
+        >
+          Gallery
+        </button>
+        <button
+          className={`app-tab ${activeTab === 'planner' ? 'active' : ''}`}
+          onClick={() => setActiveTab('planner')}
+        >
+          Trip Planner
+        </button>
+      </div>
+
+      {/* Conditional Content */}
+      {activeTab === 'gallery' ? (
+        <>
+          <ChatbotPanel onRecommendFeed={handleRecommendFeed} />
+          <RegionGallery
+            regions={displayedRegions.slice(0, FEED_SIZE)}
+            onSelect={region => {
+              setSelectedRegion(region);
+              setInsightRegion(null);
+            }}
+          />
+        </>
+      ) : (
+        <TripPlannerPage regions={regions} />
+      )}
+
       <footer className="main-footer">
         <div className="main-footer-top">
           <div>
@@ -201,7 +239,9 @@ export default function App() {
             <span>Join</span>
           </div>
         </div>
-        <div className="main-footer-bottom">© 2026 LocalVibe. All rights reserved.</div>
+        <div className="main-footer-bottom">
+          © 2026 LocalVibe. All rights reserved.
+        </div>
       </footer>
       <RegionModal
         region={insightRegion || selectedRegion}

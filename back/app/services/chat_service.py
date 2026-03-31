@@ -488,3 +488,70 @@ def get_chat_result(user_message: str) -> dict:
         fallback = _standard_answer_from_ids(recommended_ids, rows)
         answer = f"{scope_notice}\n{fallback}" if scope_notice else fallback
         return {"answer": answer, "recommendedRegionIds": recommended_ids}
+
+
+def get_trip_chat_result(user_message: str, trip_duration: dict) -> dict:
+    """Trip planner용 채팅 - OpenAI 답변만 반환 (자동 메시지 없음)"""
+    api_key: Optional[str] = os.getenv("OPEN_API_KEY") or os.getenv("OPENAI_API_KEY")
+    model = "gpt-4o-mini"
+    rows = load_regions()
+    valid_region_ids = {int(row["id"]) for row in rows}
+    
+    # tripDuration 기반 최대 개수 계산
+    days = trip_duration.get("days", 1)
+    max_locations = max(1, days * 5)
+    
+    baseline_ids = _build_recommendation_ids(user_message, rows, max_locations)
+    recommended_ids = _normalize_recommended_ids(baseline_ids, valid_region_ids, baseline_ids)
+    
+    if not api_key:
+        # API 키 없을 때는 기본 답변만 반환 (메시지 없이)
+        return {
+            "answer": "추천 장소를 조회했습니다.",
+            "recommendedRegionIds": recommended_ids
+        }
+    
+    client = OpenAI(api_key=api_key)
+    region_context = _build_region_context()
+    nights = trip_duration.get("nights", 0)
+    system_prompt = (
+        "당신은 LocalVibe 여행 계획 도우미입니다. "
+        f"사용자는 {nights}박 {days}일 여행을 계획 중입니다. "
+        f"최대 {max_locations}개 장소를 추천할 수 있습니다. "
+        "질문에 친절하고 구체적으로 답하세요."
+    )
+    
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            temperature=0.3,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": (
+                        "데이터 목록:\n"
+                        f"{region_context}\n\n"
+                        "다음 형식으로 답하세요: "
+                        f'{{"answer":"...", "recommendedRegionIds":[id1,id2,...,max {max_locations}개]}}\n'
+                        f"질문: {user_message}"
+                    ),
+                },
+            ],
+        )
+        content = response.choices[0].message.content or ""
+        parsed = json.loads(content)
+        answer = parsed.get("answer") or "추천 장소를 찾았습니다."
+        ids = parsed.get("recommendedRegionIds")
+        if not isinstance(ids, list):
+            ids = []
+        ids = _normalize_recommended_ids(ids, valid_region_ids, baseline_ids)[:max_locations]
+        
+        # OpenAI 답변만 그대로 반환 (자동 메시지 X)
+        return {"answer": answer, "recommendedRegionIds": ids}
+    except Exception:
+        return {
+            "answer": "추천을 처리하는 중 오류가 발생했습니다.",
+            "recommendedRegionIds": recommended_ids
+        }
