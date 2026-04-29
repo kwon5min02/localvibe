@@ -1,50 +1,87 @@
-import json
 import os
 import time
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
 
-# 환경 변수 로드
-load_dotenv()
+# 이미지 로컬 저장 루트: back/static/images/{place_id}/{uuid}.jpg
+IMAGE_SAVE_ROOT = Path(__file__).resolve().parents[2] / "static" / "images"
 
-# ========== DB 연결 설정 (TODO: 데이터베이스 라이브러리 설치 필요) ==========
-# 아래 중 원하는 DB에 맞게 수정하세요
-# MySQL: pip install mysql-connector-python 또는 pip install PyMySQL
-# PostgreSQL: pip install psycopg2-binary
-# SQLite: 기본 내장 (sqlite3)
-# MongoDB: pip install pymongo
+_CONTENT_TYPE_EXT = {"png": "png", "gif": "gif", "webp": "webp"}
 
-# 예제: MySQL 연결
-# import mysql.connector
-# OR PostgreSQL 연결
-# import psycopg2
-# OR SQLite 연결
-# import sqlite3
 
-DB_CONFIG = {
-    # TODO: 실제 DB 정보로 수정
-    "host": "your_db_host",
-    "user": "your_db_user",
-    "password": "your_db_password",
-    "database": "your_database_name",
-    "port": 3306,  # MySQL 기본 포트
-}
+# ── DB 헬퍼 ──────────────────────────────────────────────────────────────────
+
+
+def _get_db_connection():
+    """MYSQL_URL 환경변수로 pymysql 커넥션 반환."""
+    import pymysql
+
+    mysql_url = os.getenv("MYSQL_URL", "")
+    if not mysql_url:
+        raise RuntimeError("MYSQL_URL 환경변수가 설정되지 않았습니다.")
+
+    parsed = urlparse(mysql_url)
+    return pymysql.connect(
+        host=parsed.hostname,
+        user=parsed.username,
+        password=parsed.password,
+        database=parsed.path.lstrip("/"),
+        port=parsed.port or 3306,
+    )
+
+
+def _save_images_to_db(place_id: int, images: List[Dict]) -> None:
+    """
+    CRAWLED_IMAGES 테이블에 이미지 정보 insert.
+    동일 source_url + place_id 조합이 이미 있으면 건너뜀 (중복 방지).
+
+    images 항목 형식: {"source_url": str, "local_path": str, "serve_url": str}
+    """
+    if not os.getenv("MYSQL_URL"):
+        print("MYSQL_URL 환경변수가 없어 DB 저장을 건너뜁니다.")
+        return
+
+    conn = None
+    try:
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        now = datetime.now(timezone.utc)
+
+        for img in images:
+            cursor.execute(
+                "SELECT image_id FROM crawled_images WHERE source_url = %s AND place_id = %s LIMIT 1",
+                (img["source_url"], place_id),
+            )
+            if cursor.fetchone():
+                continue
+            cursor.execute(
+                "INSERT INTO crawled_images (place_id, source_url, local_path, serve_url, crawled_at)"
+                " VALUES (%s, %s, %s, %s, %s)",
+                (place_id, img["source_url"], img["local_path"], img["serve_url"], now),
+            )
+
+        conn.commit()
+        print(f"  DB 저장 완료: place_id={place_id}, {len(images)}개 이미지")
+    except Exception as e:
+        print(f"DB 저장 에러: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+
+# ── 크롤러 클래스 ─────────────────────────────────────────────────────────────
 
 
 class NaverBlogCrawler:
     """네이버 검색 API와 BeautifulSoup을 사용한 블로그 데이터 수집 클래스"""
 
     def __init__(self, client_id: str, client_secret: str):
-        """
-        Naver API 크리덴셜 초기화
-
-        Args:
-            client_id: 네이버 API 클라이언트 ID
-            client_secret: 네이버 API 클라이언트 시크릿
-        """
         self.client_id = client_id
         self.client_secret = client_secret
         self.search_api_url = "https://openapi.naver.com/v1/search/blog"
@@ -53,351 +90,266 @@ class NaverBlogCrawler:
             "X-Naver-Client-Secret": self.client_secret,
         }
         self.naver_base_url = "https://blog.naver.com"
+        self._crawl_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        }
+
+    # ── 공통 유틸 ─────────────────────────────────────────────────────────────
+
+    def _resolve_soup(self, url: str) -> Optional[BeautifulSoup]:
+        """URL을 가져와 BeautifulSoup 반환. 네이버 iframe이 있으면 iframe 내부를 파싱."""
+        try:
+            resp = requests.get(url, headers=self._crawl_headers, timeout=10)
+            resp.encoding = "utf-8"
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            iframe = soup.find("iframe", {"id": "mainFrame"})
+            if iframe:
+                src = iframe.get("src", "")
+                if src:
+                    if not src.startswith("http"):
+                        src = (
+                            "https:" + src
+                            if src.startswith("//")
+                            else self.naver_base_url + src
+                        )
+                    try:
+                        iframe_resp = requests.get(
+                            src, headers=self._crawl_headers, timeout=10
+                        )
+                        iframe_resp.encoding = "utf-8"
+                        soup = BeautifulSoup(iframe_resp.text, "html.parser")
+                    except Exception:
+                        pass  # iframe 실패 시 원본 soup 사용
+
+            return soup
+        except requests.exceptions.RequestException as e:
+            print(f"페이지 로드 에러 ('{url}'): {e}")
+            return None
+
+    # ── 텍스트 크롤링 ─────────────────────────────────────────────────────────
 
     def search_blog(self, keyword: str, display: int = 5) -> List[Dict]:
-        """
-        네이버 검색 API를 사용하여 블로그 검색
-
-        Args:
-            keyword: 검색 키워드 (상호명)
-            display: 조회할 결과 수 (기본 5개)
-
-        Returns:
-            검색 결과 리스트 [{"title": "...", "link": "...", "description": "..."}]
-        """
+        """네이버 검색 API로 블로그 검색. 결과 리스트 반환."""
         try:
-            params = {
-                "query": keyword,
-                "display": display,
-                "sort": "sim",  # 정확도순 정렬
-            }
-
+            params = {"query": keyword, "display": display, "sort": "sim"}
             response = requests.get(
                 self.search_api_url, headers=self.headers, params=params, timeout=10
             )
             response.raise_for_status()
-
-            data = response.json()
-            results = []
-
-            for item in data.get("items", []):
-                results.append(
-                    {
-                        "title": item["title"],
-                        "link": item["link"],
-                        "description": item["description"],
-                        "blogger_name": item.get("bloggername", "Unknown"),
-                        "post_date": item.get("postdate", ""),
-                    }
-                )
-
-            return results
-
+            return [
+                {
+                    "title": item["title"],
+                    "link": item["link"],
+                    "description": item["description"],
+                    "blogger_name": item.get("bloggername", "Unknown"),
+                    "post_date": item.get("postdate", ""),
+                }
+                for item in response.json().get("items", [])
+            ]
         except requests.exceptions.RequestException as e:
             print(f"검색 API 에러 ('{keyword}'): {e}")
             return []
 
     def extract_blog_content(self, blog_url: str) -> Optional[str]:
-        """
-        네이버 블로그의 본문 내용 추출 (iframe 처리 포함)
-
-        Args:
-            blog_url: 네이버 블로그 URL
-
-        Returns:
-            본문 텍스트 또는 None
-        """
-        try:
-            # 블로그 페이지 요청
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            response = requests.get(blog_url, headers=headers, timeout=10)
-            response.encoding = "utf-8"
-            response.raise_for_status()
-
-            soup = BeautifulSoup(response.text, "html.parser")
-
-            # 방법 1: 일반적인 블로그 본문 영역 추출
-            content_area = soup.find("div", {"class": "se-main-container"})
-            if content_area:
-                # 텍스트 추출
-                text_content = content_area.get_text(strip=True)
-                return text_content if text_content else None
-
-            # 방법 2: iframe에서 main.naver.com 링크 추출 및 처리
-            iframe = soup.find("iframe", {"id": "mainFrame"})
-            if iframe:
-                iframe_src = iframe.get("src")
-                if iframe_src:
-                    # iframe 주소 정규화
-                    if not iframe_src.startswith("http"):
-                        iframe_src = (
-                            "https:" + iframe_src
-                            if iframe_src.startswith("//")
-                            else self.naver_base_url + iframe_src
-                        )
-
-                    # iframe 내용 추출
-                    try:
-                        iframe_response = requests.get(
-                            iframe_src, headers=headers, timeout=10
-                        )
-                        iframe_response.encoding = "utf-8"
-                        iframe_soup = BeautifulSoup(iframe_response.text, "html.parser")
-
-                        # 실제 본문 내용 추출
-                        content = iframe_soup.find(
-                            "div", {"class": "se-main-container"}
-                        )
-                        if content:
-                            text_content = content.get_text(strip=True)
-                            return text_content if text_content else None
-                    except Exception as e:
-                        print(f"iframe 처리 에러: {e}")
-
-            # 방법 3: 기본 div 영역에서 추출 (구형 블로그)
-            post_view = soup.find("div", {"class": "post-view"})
-            if post_view:
-                text_content = post_view.get_text(strip=True)
-                return text_content if text_content else None
-
+        """네이버 블로그 본문 텍스트 추출 (iframe 처리 포함)."""
+        soup = self._resolve_soup(blog_url)
+        if not soup:
             return None
 
-        except requests.exceptions.RequestException as e:
-            print(f"블로그 본문 추출 에러 ('{blog_url}'): {e}")
-            return None
-        except Exception as e:
-            print(f"예상치 못한 에러 ('{blog_url}'): {e}")
-            return None
+        for selector in ("se-main-container", "post-view"):
+            area = soup.find("div", {"class": selector})
+            if area:
+                text = area.get_text(strip=True)
+                return text or None
+
+        return None
 
     def crawl_blogs(
         self, shop_names: List[str], max_results_per_shop: int = 3
     ) -> List[Dict]:
-        """
-        여러 상호명에 대해 블로그 검색 및 본문 크롤링 수행
-
-        Args:
-            shop_names: 검색할 상호명 리스트
-            max_results_per_shop: 각 상호명당 수집할 최대 포스트 수
-
-        Returns:
-            수집된 데이터 리스트
-        """
+        """여러 상호명에 대해 블로그 검색 및 본문 크롤링."""
         all_data = []
-
         for idx, shop_name in enumerate(shop_names, 1):
             print(f"\n[{idx}/{len(shop_names)}] '{shop_name}' 검색 중...")
-
-            # 블로그 검색
             search_results = self.search_blog(shop_name, display=max_results_per_shop)
-
             if not search_results:
                 print("  → 검색 결과 없음")
                 continue
-
             print(f"  → {len(search_results)}개 결과 발견")
-
             for result_idx, result in enumerate(search_results, 1):
                 print(f"    [{result_idx}] {result['title'][:50]}... 본문 추출 중...")
-
-                # 블로그 본문 추출
                 content = self.extract_blog_content(result["link"])
-
                 if content:
-                    # 전체 본문 내용 저장
-                    data_entry = {
-                        "shop_name": shop_name,
-                        "blog_title": result["title"],
-                        "blog_url": result["link"],
-                        "blogger_name": result["blogger_name"],
-                        "post_date": result["post_date"],
-                        "description": result["description"],
-                        "content": content,
-                        "content_length": len(content),
-                    }
-                    all_data.append(data_entry)
+                    all_data.append(
+                        {
+                            "shop_name": shop_name,
+                            "blog_title": result["title"],
+                            "blog_url": result["link"],
+                            "blogger_name": result["blogger_name"],
+                            "post_date": result["post_date"],
+                            "description": result["description"],
+                            "content": content,
+                            "content_length": len(content),
+                        }
+                    )
                     print(f"      → 성공 (본문: {len(content)}자)")
                 else:
                     print("      → 본문 추출 실패")
-
-                # API 호출 빈도 조절
                 time.sleep(0.5)
-
-            # 상호명별 딜레이
             time.sleep(1)
-
         return all_data
 
-    def save_to_json(self, data: List[Dict], output_file: str) -> None:
-        """
-        수집된 데이터를 JSON 파일로 저장
+    # ── 이미지 크롤링 ─────────────────────────────────────────────────────────
 
-        Args:
-            data: 저장할 데이터 리스트
-            output_file: 출력 파일 경로
+    def extract_blog_images(self, blog_url: str, max_images: int = 5) -> List[str]:
+        """블로그 본문에서 이미지 URL 추출 (pstatic.net / naver.net 도메인만 수집)."""
+        soup = self._resolve_soup(blog_url)
+        if not soup:
+            return []
+
+        content_area = soup.find("div", {"class": "se-main-container"})
+        search_scope = content_area if content_area else soup
+
+        urls: List[str] = []
+        for img in search_scope.find_all("img"):
+            src = (img.get("data-lazy-src") or img.get("src") or "").strip()
+            if not src.startswith("http"):
+                continue
+            if "pstatic.net" not in src and "naver.net" not in src:
+                continue
+            if src not in urls:
+                urls.append(src)
+            if len(urls) >= max_images:
+                break
+
+        return urls
+
+    def download_image(self, image_url: str, place_id: int) -> Optional[Dict[str, str]]:
+        """
+        이미지 URL을 로컬에 저장하고 CRAWLED_IMAGES 저장용 dict 반환.
+
+        Returns:
+            {"source_url": ..., "local_path": ..., "serve_url": ...} 또는 None
         """
         try:
-            with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            print(f"\n✓ 데이터 저장 완료: {output_file}")
-            print(f"  수집된 포스트: {len(data)}개")
+            resp = requests.get(image_url, headers=self._crawl_headers, timeout=10)
+            resp.raise_for_status()
+
+            content_type = resp.headers.get("Content-Type", "")
+            ext = next((e for e in _CONTENT_TYPE_EXT if e in content_type), "jpg")
+
+            filename = f"{uuid.uuid4().hex}.{ext}"
+            save_dir = IMAGE_SAVE_ROOT / str(place_id)
+            save_dir.mkdir(parents=True, exist_ok=True)
+            (save_dir / filename).write_bytes(resp.content)
+
+            return {
+                "source_url": image_url,
+                "local_path": str(save_dir / filename),
+                "serve_url": f"/static/images/{place_id}/{filename}",
+            }
         except Exception as e:
-            print(f"JSON 저장 에러: {e}")
+            print(f"이미지 다운로드 실패 ('{image_url}'): {e}")
+            return None
 
-    def save_to_database(self, data: List[Dict]) -> None:
+    def crawl_and_save_images(
+        self,
+        place_id: int,
+        keyword: str,
+        max_posts: int = 3,
+        max_images_per_post: int = 3,
+    ) -> List[Dict]:
         """
-        TODO: 수집된 데이터를 데이터베이스에 저장
+        키워드로 블로그를 검색해 이미지를 로컬 저장 후 CRAWLED_IMAGES에 저장.
 
-        구현 방법:
-        1. DB 라이브러리 import 해제
-        2. 아래 코드를 실제 DB INSERT 쿼리로 변경
-        3. 연결, 커서 생성, 쿼리 실행, 커밋 순으로 진행
-
-        예제 (MySQL):
-        ```python
-        import mysql.connector
-        conn = mysql.connector.connect(**DB_CONFIG)
-        cursor = conn.cursor()
-
-        query = "INSERT INTO blog_posts (shop_name, blog_title, blog_url, content) VALUES (%s, %s, %s, %s)"
-        for entry in data:
-            cursor.execute(query, (entry['shop_name'], entry['blog_title'], entry['blog_url'], entry['content']))
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-        ```
-
-        Args:
-            data: DB에 저장할 데이터 리스트
+        Returns:
+            이미지 정보 리스트 [{"source_url": ..., "local_path": ..., "serve_url": ...}]
         """
-        if not data:
-            print("저장할 데이터가 없습니다.")
-            return
+        # 캐시 확인은 DOCUMENTS 아티클 단위로 상위(article_service)에서 처리
+        posts = self.search_blog(keyword, display=max_posts)
+        saved: List[Dict] = []
 
-        try:
-            # TODO: DB 연결 및 저장 로직 구현
-            print("\n⚠️  데이터베이스 저장 기능이 아직 구현되지 않았습니다.")
-            print(f"   (데이터: {len(data)}개 포스트)")
-            print("\n   구현 방법은 save_to_database() 함수의 docstring을 참고하세요.")
+        for post in posts:
+            image_urls = self.extract_blog_images(
+                post["link"], max_images=max_images_per_post
+            )
+            for img_url in image_urls:
+                result = self.download_image(img_url, place_id)
+                if result:
+                    saved.append(result)
+            time.sleep(0.5)
 
-        except Exception as e:
-            print(f"데이터베이스 저장 에러: {e}")
+        if saved:
+            _save_images_to_db(place_id, saved)
+
+        return saved
 
 
-def load_shop_names_from_db() -> List[str]:
+# ── 온디맨드 진입점 ───────────────────────────────────────────────────────────
+
+
+def _get_crawler() -> Optional["NaverBlogCrawler"]:
+    """환경변수로 NaverBlogCrawler 인스턴스 반환. 크리덴셜 없으면 None."""
+    client_id = os.getenv("NAVER_CLIENT_ID", "")
+    client_secret = os.getenv("NAVER_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        print("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 환경변수가 없습니다.")
+        return None
+    return NaverBlogCrawler(client_id, client_secret)
+
+
+def crawl_place_text_on_demand(
+    name: str, region: str = "", max_posts: int = 3
+) -> List[Dict]:
     """
-    TODO: 데이터베이스에서 상호명 리스트 조회
+    장소명으로 블로그 텍스트를 온디맨드 크롤링하여 반환.
+    반환값을 상위 서비스(article_service)에서 AI 아티클 생성에 사용.
 
-    구현 방법:
-    1. DB 연결 후 SELECT 쿼리 실행
-    2. 상호명 컬럼만 추출해서 리스트로 반환
-
-    예제 (MySQL):
-    ```python
-    import mysql.connector
-    conn = mysql.connector.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute("SELECT shop_name FROM shops WHERE is_active = 1")
-    results = cursor.fetchall()
-    shop_names = [row[0] for row in results]
-    cursor.close()
-    conn.close()
-    return shop_names
-    ```
+    Args:
+        name: 장소명 (검색 키워드 기반)
+        region: 지역명 (키워드 보강용, 예: "강릉")
+        max_posts: 수집할 블로그 포스트 수
 
     Returns:
-        상호명 리스트
+        [{shop_name, blog_title, blog_url, blogger_name, post_date, description, content, content_length}, ...]
     """
-    # 임시: 테스트 데이터 반환 (나중에 DB 쿼리로 변경)
-    test_data = {
-        "shops": [
-            {"name": "스타벅스"},
-            {"name": "이디야커피"},
-            {"name": "투썸플레이스"},
-            {"name": "카페베네"},
-            {"name": "할리스커피"},
-        ]
-    }
-    shop_names = [shop["name"] for shop in test_data["shops"]]
-    return shop_names
+    crawler = _get_crawler()
+    if not crawler:
+        return []
+
+    keyword = f"{name} {region}".strip()
+    return crawler.crawl_blogs([keyword], max_results_per_shop=max_posts)
 
 
-def main():
+def crawl_place_on_demand(place_id: int, name: str, region: str = "") -> List[Dict]:
     """
-    메인 실행 함수
+    갤러리 모달 요청 시 호출되는 온디맨드 이미지 크롤링 함수.
+    DOCUMENTS 아티클 캐시 확인은 상위 서비스(article_service)에서 처리하며,
+    여기서는 네이버 블로그 크롤링 → 로컬 저장 → CRAWLED_IMAGES 저장만 담당.
+
+    Args:
+        place_id: PLACES.place_id
+        name: 장소명 (검색 키워드 기반)
+        region: 지역명 (키워드 보강용, 예: "강릉")
+
+    Returns:
+        이미지 정보 리스트 [{"source_url": ..., "local_path": ..., "serve_url": ...}]
     """
-    # ===== 설정 =====
-    # 네이버 API 크리덴셜 (환경변수 또는 직접 입력)
-    CLIENT_ID = os.getenv("NAVER_CLIENT_ID", "YOUR_CLIENT_ID_HERE")
-    CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET", "YOUR_CLIENT_SECRET_HERE")
+    crawler = _get_crawler()
+    if not crawler:
+        return []
 
-    # 크리덴셜 확인
-    if CLIENT_ID == "YOUR_CLIENT_ID_HERE" or CLIENT_SECRET == "YOUR_CLIENT_SECRET_HERE":
-        print("=" * 60)
-        print("⚠️  네이버 API 크리덴셜이 설정되지 않았습니다.")
-        print("=" * 60)
-        print("\n설정 방법:\n")
-        print("1. .env 파일 생성:")
-        print("   $ cp .env.example .env\n")
-        print("2. .env 파일 수정 (아래 내용 입력):")
-        print("   NAVER_CLIENT_ID=your_actual_client_id")
-        print("   NAVER_CLIENT_SECRET=your_actual_client_secret\n")
-        print("3. 네이버 개발자 센터에서 발급받기:")
-        print("   https://developers.naver.com/console/dashboard\n")
-        return
-
-    # ===== 데이터 입력 =====
-    # TODO: DB 연결 여부에 따라 아래 두 방식 중 하나 선택
-    # 방식 1: 테스트 데이터 사용 (현재)
-    # shop_names = load_shop_names_from_db()
-
-    # 방식 2: DB에서 조회 (나중에 구현)
-    # shop_names = load_shop_names_from_db()  # 함수 내부 DB 로직 활성화 필요
-
-    # 현재는 테스트 데이터 사용
-    test_db = {
-        "shops": [
-            {"name": "스타벅스"},
-            {"name": "이디야커피"},
-            {"name": "투썸플레이스"},
-            {"name": "카페베네"},
-            {"name": "할리스커피"},
-        ]
-    }
-    shop_names = [shop["name"] for shop in test_db["shops"]]
-
-    print("=" * 60)
-    print("네이버 블로그 데이터 수집 시작")
-    print("=" * 60)
-    print(f"검색할 상호명: {', '.join(shop_names)}\n")
-
-    # ===== 크롤링 실행 =====
-    crawler = NaverBlogCrawler(CLIENT_ID, CLIENT_SECRET)
-    collected_data = crawler.crawl_blogs(shop_names, max_results_per_shop=3)
-
-    # ===== 결과 저장 (JSON 또는 DB) =====
-    # 옵션 1: JSON 파일로 저장 (현재)
-    output_path = "blog_data.json"
-    crawler.save_to_json(collected_data, output_path)
-
-    # 옵션 2: 데이터베이스에 저장 (TODO: 구현 필요)
-    # crawler.save_to_database(collected_data)
-
-    # ===== 결과 요약 =====
-    print("\n" + "=" * 60)
-    print("수집 완료 요약")
-    print("=" * 60)
-    if collected_data:
-        print(f"✓ 총 {len(collected_data)}개 포스트 수집")
-        for entry in collected_data[:3]:  # 처음 3개만 출력
-            print(f"\n  • [{entry['shop_name']}]")
-            print(f"    제목: {entry['blog_title'][:50]}...")
-            print(f"    본문: {entry['content'][:80]}...")
-    else:
-        print("✗ 수집된 데이터가 없습니다.")
+    keyword = f"{name} {region}".strip()
+    return crawler.crawl_and_save_images(place_id=place_id, keyword=keyword)
 
 
 if __name__ == "__main__":
-    main()
+    # 직접 실행 시 동작 테스트용
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    results = crawl_place_text_on_demand(name="성수동 카페", region="서울", max_posts=2)
+    for r in results:
+        print(r["blog_title"], "-", r["content_length"], "자")
