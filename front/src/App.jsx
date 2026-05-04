@@ -5,10 +5,20 @@ import RegionGallery from './components/RegionGallery';
 import RegionModal from './components/RegionModal';
 import { defaultRegions } from './data/defaultRegions';
 import TripPlannerPage from './pages/TripPlannerPage';
+import MyPage from './pages/MyPage';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 const FEED_SIZE = 9;
+const SIDEBAR_MENU = [
+  { id: 'gallery', label: '🗺 지역 갤러리', section: '메인' },
+  { id: 'planner', label: '✈ 여행 플래너', section: '메인' },
+  { id: 'mypage', label: '👤 마이페이지', section: '메인' },
+  { id: 'gwangju', label: '📍 광주', section: '지역' },
+  { id: 'jeonnam', label: '📍 전남', section: '지역' },
+  { id: 'about', label: '💡 서비스 소개', section: '정보' },
+  { id: 'contact', label: '📬 문의하기', section: '정보' },
+];
 
 function normalizeTextKey(value) {
   return String(value || '')
@@ -73,12 +83,29 @@ function pickFeedItems(items, size = FEED_SIZE) {
 }
 
 export default function App() {
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('lv_access_token') || '');
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const raw = localStorage.getItem('lv_user');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
   const [regions, setRegions] = useState(defaultRegions);
   const [displayedRegions, setDisplayedRegions] = useState(defaultRegions);
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [insightRegion, setInsightRegion] = useState(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('gallery'); // "gallery" or "planner"
+  const [scrappedIds, setScrappedIds] = useState(() => {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('lv_scraps') || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  });
 
   useEffect(() => {
     let isMounted = true;
@@ -188,61 +215,147 @@ export default function App() {
     setDisplayedRegions([...uniqueSelected, ...filler].slice(0, FEED_SIZE));
   };
 
+  const handleToggleScrap = regionId => {
+    setScrappedIds(prev => {
+      const exists = prev.includes(regionId);
+      const next = exists ? prev.filter(id => id !== regionId) : [...prev, regionId];
+      localStorage.setItem('lv_scraps', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const scrappedRegions = useMemo(
+    () => regions.filter(region => scrappedIds.includes(region.id)),
+    [regions, scrappedIds],
+  );
+
+  const handleGoogleCredential = async credential => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_token: credential }),
+      });
+      if (!response.ok) {
+        throw new Error('google login failed');
+      }
+      const data = await response.json();
+      const nextToken = String(data?.access_token || '');
+      const nextUser = data?.user || null;
+      if (!nextToken || !nextUser) {
+        throw new Error('invalid auth response');
+      }
+
+      setAuthToken(nextToken);
+      setCurrentUser(nextUser);
+      localStorage.setItem('lv_access_token', nextToken);
+      localStorage.setItem('lv_user', JSON.stringify(nextUser));
+    } catch {
+      setAuthToken('');
+      setCurrentUser(null);
+      localStorage.removeItem('lv_access_token');
+      localStorage.removeItem('lv_user');
+      window.alert('구글 로그인에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    }
+  };
+
+  const handleLogout = () => {
+    setAuthToken('');
+    setCurrentUser(null);
+    localStorage.removeItem('lv_access_token');
+    localStorage.removeItem('lv_user');
+  };
+
   return (
-    <main className="app-shell">
-      <TopHeader />
+    <div className="app-page">
+      <TopHeader
+        user={currentUser}
+        authToken={authToken}
+        onGoogleCredential={handleGoogleCredential}
+        onLogout={handleLogout}
+      />
+      <div className="app-layout">
+        <aside className="app-sidebar">
+          <div className="sidebar-section-title">메인</div>
+          {SIDEBAR_MENU.filter(item => item.section === '메인').map(item => (
+            <button
+              key={item.id}
+              className={`sidebar-link ${activeTab === item.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(item.id)}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
 
-      {/* Tab Navigation */}
-      <div className="app-tabs">
-        <button
-          className={`app-tab ${activeTab === 'gallery' ? 'active' : ''}`}
-          onClick={() => setActiveTab('gallery')}
-        >
-          Gallery
-        </button>
-        <button
-          className={`app-tab ${activeTab === 'planner' ? 'active' : ''}`}
-          onClick={() => setActiveTab('planner')}
-        >
-          Trip Planner
-        </button>
-      </div>
-
-      {/* Conditional Content */}
-      {activeTab === 'gallery' ? (
-        <>
-          <ChatbotPanel onRecommendFeed={handleRecommendFeed} />
-          <RegionGallery
-            regions={displayedRegions.slice(0, FEED_SIZE)}
-            onSelect={region => {
-              setSelectedRegion(region);
-              setInsightRegion(null);
-            }}
-          />
-        </>
-      ) : (
-        <TripPlannerPage regions={regions} />
-      )}
-
-      <footer className="main-footer">
-        <div className="main-footer-top">
-          <div>
-            <div className="main-footer-brand">LocalVibe</div>
-            <div className="main-footer-desc">
-              Discover real local stories with AI and data-driven insights.
+          <div className="sidebar-section-title">지역</div>
+          {SIDEBAR_MENU.filter(item => item.section === '지역').map(item => (
+            <div key={item.id} className="sidebar-static-link">
+              {item.label}
             </div>
-          </div>
-          <div className="main-footer-links">
-            <span>Core Features</span>
-            <span>Pro Experience</span>
-            <span>Contact</span>
-            <span>Join</span>
-          </div>
-        </div>
-        <div className="main-footer-bottom">
-          © 2026 LocalVibe. All rights reserved.
-        </div>
-      </footer>
+          ))}
+
+          <div className="sidebar-section-title">정보</div>
+          {SIDEBAR_MENU.filter(item => item.section === '정보').map(item => (
+            <div key={item.id} className="sidebar-static-link">
+              {item.label}
+            </div>
+          ))}
+        </aside>
+
+        <main className="app-shell">
+          {/* Conditional Content */}
+          {activeTab === 'gallery' ? (
+            <>
+              <h1 className="top-title">로컬 바이브</h1>
+              <p className="gallery-subtitle">
+                광주·전남의 숨겨진 명소를 AI로 발견해보세요
+              </p>
+              <ChatbotPanel onRecommendFeed={handleRecommendFeed} />
+              <RegionGallery
+                regions={displayedRegions.slice(0, FEED_SIZE)}
+                scrappedIds={scrappedIds}
+                onToggleScrap={handleToggleScrap}
+                onSelect={region => {
+                  setSelectedRegion(region);
+                  setInsightRegion(null);
+                }}
+              />
+            </>
+          ) : activeTab === 'planner' ? (
+            <TripPlannerPage regions={regions} />
+          ) : (
+            <MyPage
+              scrappedRegions={scrappedRegions}
+              onToggleScrap={handleToggleScrap}
+              onOpenRegion={region => {
+                setSelectedRegion(region);
+                setInsightRegion(null);
+              }}
+            />
+          )}
+
+          <footer className="main-footer">
+            <div className="main-footer-top">
+              <div>
+                <div className="main-footer-brand">LocalVibe</div>
+                <div className="main-footer-desc">
+                  Discover real local stories with AI and data-driven insights.
+                </div>
+              </div>
+              <div className="main-footer-links">
+                <span>Core Features</span>
+                <span>Pro Experience</span>
+                <span>Contact</span>
+                <span>Join</span>
+              </div>
+            </div>
+            <div className="main-footer-bottom">
+              © 2026 LocalVibe. All rights reserved.
+            </div>
+          </footer>
+        </main>
+      </div>
       <RegionModal
         region={insightRegion || selectedRegion}
         isLoading={isInsightLoading}
@@ -251,6 +364,6 @@ export default function App() {
           setInsightRegion(null);
         }}
       />
-    </main>
+    </div>
   );
 }

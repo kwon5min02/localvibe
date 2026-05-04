@@ -2,6 +2,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -22,7 +23,7 @@ from .regions_store import get_region_by_id_from_db, init_region_db, load_region
 
 
 DATA_FILE_PATH = Path(__file__).resolve().parents[2] / "data" / "regions.json"
-CACHE_TTL_SECONDS = 600
+CACHE_TTL_SECONDS = int(os.getenv("JN_RUNTIME_CACHE_TTL_SECONDS", "600"))
 DEFAULT_BASE_ENDPOINTS = [
     "https://apis.data.go.kr/6460000/jnCourseInfo",
 ]
@@ -57,6 +58,56 @@ FALLBACK_IMAGE_POOL = [
     "https://images.unsplash.com/photo-1521017432531-fbd92d768814?auto=format&fit=crop&w=900&q=80",
 ]
 logger = logging.getLogger(__name__)
+
+
+def _contains_korean(text: str) -> bool:
+    return bool(re.search(r"[가-힣]", str(text or "")))
+
+
+def _kto_row_passes_language_filter(title: str, overview: str, address: str) -> bool:
+    require_korean = os.getenv("KTO_REQUIRE_KOREAN", "1").strip() == "1"
+    if not require_korean:
+        return True
+    combined = " ".join([title, overview, address])
+    return _contains_korean(combined)
+
+
+def _clean_kto_text(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    # Remove simple HTML tags/entities and collapse whitespace.
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = (
+        text.replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+    )
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _build_kto_intro_fallback(title: str, intro: dict, address: str) -> str:
+    if not isinstance(intro, dict):
+        return ""
+    candidate_keys = [
+        "infocenter",
+        "usetime",
+        "openperiod",
+        "expguide",
+        "parking",
+        "restdate",
+        "chkpet",
+    ]
+    for key in candidate_keys:
+        value = _clean_kto_text(str(intro.get(key, "")))
+        if value:
+            sentence = f"{title}: {value}"
+            return sentence[:180]
+    if address:
+        return f"{title}은(는) {address}에 위치한 관광지입니다."
+    return ""
 
 
 def _stable_region_id(value: str) -> int:
@@ -563,7 +614,12 @@ def _infer_kto_insight_fields(title: str, overview: str, content_type: str, addr
     return list(dict.fromkeys(recommended)), busy_hours, target_customers
 
 
-def _normalize_kto_item(item: dict, source_name: str, detail_map: Optional[dict[str, dict]] = None) -> dict:
+def _normalize_kto_item(
+    item: dict,
+    source_name: str,
+    detail_map: Optional[dict[str, dict]] = None,
+    intro_map: Optional[dict[str, dict]] = None,
+) -> dict:
     content_id = str(item.get("contentid", "")).strip()
     if not content_id:
         return {}
@@ -573,9 +629,12 @@ def _normalize_kto_item(item: dict, source_name: str, detail_map: Optional[dict[
         return {}
 
     address = str(detail.get("addr1") or item.get("addr1") or "").strip()
-    overview = str(detail.get("overview") or item.get("overview") or "").strip()
+    overview = _clean_kto_text(str(detail.get("overview") or item.get("overview") or ""))
+    intro = (intro_map or {}).get(content_id, {})
     if not overview:
-        overview = f"한국관광공사 공개데이터 기반 장소 정보입니다. (주소: {address})" if address else "한국관광공사 공개데이터 기반 장소 정보입니다."
+        overview = _build_kto_intro_fallback(title, intro, address)
+    if not overview:
+        overview = f"{title}의 관광 정보입니다."
 
     image_url = _sanitize_image_url(
         str(detail.get("firstimage") or item.get("firstimage") or item.get("firstimage2") or "").strip()
@@ -586,10 +645,18 @@ def _normalize_kto_item(item: dict, source_name: str, detail_map: Optional[dict[
     region = _extract_region_from_address(address)
     content_type = str(item.get("contenttypeid") or "").strip()
     phone = str(detail.get("tel") or item.get("tel") or "").strip()
+    if not _kto_row_passes_language_filter(title, overview, address):
+        return {}
 
     recommended, busy_hours, target_customers = _infer_kto_insight_fields(title, overview, content_type, address)
     if phone:
         target_customers.append(f"전화문의: {phone}")
+
+    summary_text = overview
+    if len(summary_text) > 190:
+        summary_text = f"{summary_text[:187]}..."
+    if address and "주소:" not in summary_text:
+        summary_text = f"{summary_text} (주소: {address})"
 
     return {
         "id": _stable_region_id(f"kto:{content_id}"),
@@ -599,7 +666,7 @@ def _normalize_kto_item(item: dict, source_name: str, detail_map: Optional[dict[
         "province": region,
         "address": address,
         "imageUrl": image_url,
-        "summary": f"{overview} (주소: {address})" if address and "주소:" not in overview else overview,
+        "summary": summary_text,
         "recommendedBusinesses": list(dict.fromkeys(recommended)),
         "busyHours": list(dict.fromkeys(busy_hours)),
         "targetCustomers": list(dict.fromkeys(target_customers)),
@@ -646,13 +713,21 @@ def _fetch_kto_regions(kto_service_key: str, timeout_seconds: int, retry_count: 
     area_endpoint = f"{base_url}/areaBasedList2"
     keyword_endpoint = f"{base_url}/searchKeyword2"
     detail_endpoint = f"{base_url}/detailCommon2"
+    intro_endpoint = f"{base_url}/detailIntro2"
 
     start_page = os.getenv("KTO_PAGE_NO", "1")
     page_size = os.getenv("KTO_NUM_ROWS", "30")
     max_items = int(os.getenv("KTO_MAX_ITEMS", "90"))
     detail_max = int(os.getenv("KTO_DETAIL_MAX", "30"))
     request_interval = float(os.getenv("KTO_REQUEST_INTERVAL", "0.15"))
-    area_codes = [code.strip() for code in os.getenv("KTO_AREA_CODES", "5,38").split(",") if code.strip()]
+    area_codes = [
+        code.strip()
+        for code in os.getenv(
+            "KTO_AREA_CODES",
+            "1,2,3,4,5,6,7,8,31,32,33,34,35,36,37,38,39",
+        ).split(",")
+        if code.strip()
+    ]
     keywords = [kw.strip() for kw in os.getenv("KTO_KEYWORDS", "").split(",") if kw.strip()]
     mobile_os = os.getenv("KTO_MOBILE_OS", "ETC")
     mobile_app = os.getenv("KTO_MOBILE_APP", "LocalVibe")
@@ -708,6 +783,7 @@ def _fetch_kto_regions(kto_service_key: str, timeout_seconds: int, retry_count: 
                 time.sleep(request_interval)
 
     detail_map: dict[str, dict] = {}
+    intro_map: dict[str, dict] = {}
     for item in collected[:detail_max]:
         content_id = str(item.get("contentid", "")).strip()
         content_type_id = str(item.get("contenttypeid", "")).strip()
@@ -727,12 +803,29 @@ def _fetch_kto_regions(kto_service_key: str, timeout_seconds: int, retry_count: 
         detail_items = _fetch_json_items(detail_endpoint, params, timeout_seconds, retry_count, base_retry_wait, rate_limit_wait)
         if detail_items:
             detail_map[content_id] = detail_items[0]
+        intro_params = dict(common_params)
+        intro_params.update(
+            {
+                "contentId": content_id,
+                "contentTypeId": content_type_id,
+            }
+        )
+        intro_items = _fetch_json_items(
+            intro_endpoint,
+            intro_params,
+            timeout_seconds,
+            retry_count,
+            base_retry_wait,
+            rate_limit_wait,
+        )
+        if intro_items:
+            intro_map[content_id] = intro_items[0]
         if request_interval > 0:
             time.sleep(request_interval)
 
     normalized: list[dict] = []
     for item in collected:
-        row = _normalize_kto_item(item, source_name, detail_map)
+        row = _normalize_kto_item(item, source_name, detail_map, intro_map)
         if row:
             normalized.append(row)
     logger.info("[KTO] normalized items=%d", len(normalized))
@@ -1341,8 +1434,9 @@ def fetch_external_regions(jn_service_key: str, kto_service_key: str) -> list[di
     rate_limit_wait = float(os.getenv("JN_API_429_WAIT_SECONDS", "1.2"))
 
     merged_rows: list[dict] = []
+    kto_only_mode = os.getenv("KTO_ONLY_MODE", "0").strip() == "1"
 
-    if jn_service_key:
+    if jn_service_key and not kto_only_mode:
         endpoint_map = {url.rstrip("/").split("/")[-1]: url for url in endpoint_urls}
         list_endpoint = endpoint_map.get("getCourseList")
         plan_endpoint = endpoint_map.get("getCoursePlanList")
@@ -1442,17 +1536,18 @@ def fetch_external_regions(jn_service_key: str, kto_service_key: str) -> list[di
         else:
             logger.warning("[COURSE] required endpoints missing list=%s plan=%s", bool(list_endpoint), bool(plan_endpoint))
 
-    beach_rows = _fetch_beach_regions(jn_service_key, start_page, page_size)
-    merged_rows.extend(beach_rows)
+    if not kto_only_mode:
+        beach_rows = _fetch_beach_regions(jn_service_key, start_page, page_size)
+        merged_rows.extend(beach_rows)
 
-    food_rows = _fetch_food_regions(jn_service_key, start_page, page_size)
-    merged_rows.extend(food_rows)
+        food_rows = _fetch_food_regions(jn_service_key, start_page, page_size)
+        merged_rows.extend(food_rows)
 
-    tent_rows = _fetch_tent_regions(jn_service_key, start_page, page_size)
-    merged_rows.extend(tent_rows)
+        tent_rows = _fetch_tent_regions(jn_service_key, start_page, page_size)
+        merged_rows.extend(tent_rows)
 
-    coastal_rows = _fetch_coastal_regions(jn_service_key, start_page, page_size)
-    merged_rows.extend(coastal_rows)
+        coastal_rows = _fetch_coastal_regions(jn_service_key, start_page, page_size)
+        merged_rows.extend(coastal_rows)
 
     kto_rows = _fetch_kto_regions(kto_service_key, timeout_seconds, retry_count, base_retry_wait, rate_limit_wait)
     merged_rows.extend(kto_rows)
@@ -1485,7 +1580,13 @@ def load_regions() -> list[dict]:
             os.getenv("KTO_SERVICE_KEY", "")[:8],
             os.getenv("KTO_API_BASE_URL", ""),
             os.getenv("KTO_AREA_CODES", ""),
+            os.getenv("KTO_NUM_ROWS", ""),
+            os.getenv("KTO_MAX_ITEMS", ""),
+            os.getenv("KTO_DETAIL_MAX", ""),
             os.getenv("KTO_KEYWORDS", ""),
+            os.getenv("KTO_REQUEST_INTERVAL", ""),
+            os.getenv("KTO_ONLY_MODE", ""),
+            os.getenv("KTO_REQUIRE_KOREAN", ""),
             os.getenv("JN_BEACH_ENABLE", ""),
             os.getenv("JN_BEACH_ENDPOINT_URL", ""),
             os.getenv("JN_BEACH_AREAS", ""),

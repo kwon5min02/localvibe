@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -15,8 +16,28 @@ logger = logging.getLogger(__name__)
 
 FEED_TOP_K = 9
 DAY_TRIP_KEYWORDS = {"당일", "당일치기", "원데이", "하루"}
-BROAD_REGION_HINTS = {"광주", "전남"}
-OUT_OF_SCOPE_REGION_KEYWORDS = {"전북", "군산", "남원", "전주", "익산", "김제", "완주"}
+BROAD_REGION_HINTS = {
+    "서울",
+    "인천",
+    "대전",
+    "대구",
+    "광주",
+    "부산",
+    "울산",
+    "세종",
+    "경기",
+    "강원",
+    "충북",
+    "충남",
+    "경북",
+    "경남",
+    "전북",
+    "전남",
+    "제주",
+    "전국",
+    "국내",
+}
+OUT_OF_SCOPE_REGION_KEYWORDS = set()
 GENERIC_QUERY_TOKENS = {
     "여행",
     "추천",
@@ -33,43 +54,7 @@ GENERIC_QUERY_TOKENS = {
     "맞아",
     "근처",
 }
-SOURCE_WEIGHT_KEYWORDS = {
-    "한국관광공사": 9,
-    "전라남도_남도여행길잡이": 1,
-}
 LOCALITY_SUFFIXES = ("동", "읍", "면", "리", "구", "시", "군")
-SEA_KEYWORDS = {
-    "바다",
-    "해변",
-    "해수욕장",
-    "오션",
-    "항구",
-    "해안",
-    "섬",
-    "갯벌",
-    "해양",
-    "연안",
-}
-MEAL_KEYWORDS = {
-    "식당",
-    "음식",
-    "맛집",
-    "식음료",
-    "레스토랑",
-    "외식",
-    "식사",
-    "아침",
-    "점심",
-    "저녁",
-    "브런치",
-    "한식",
-    "양식",
-    "중식",
-    "일식",
-    "분식",
-    "국밥",
-    "고기",
-}
 TRIP_ITEMS_PER_DAY = 5
 
 
@@ -172,11 +157,48 @@ def _detect_query_regions(
     return matched_regions
 
 
-def _source_weight(source: str) -> int:
-    for keyword, weight in SOURCE_WEIGHT_KEYWORDS.items():
-        if keyword in source:
-            return weight
-    return 0
+def _char_ngrams(text: str, n: int = 3) -> set[str]:
+    compact = re.sub(r"\s+", "", str(text or "").lower())
+    if len(compact) < n:
+        return {compact} if compact else set()
+    return {compact[i : i + n] for i in range(len(compact) - n + 1)}
+
+
+def _jaccard_similarity(left: str, right: str) -> float:
+    left_set = _char_ngrams(left)
+    right_set = _char_ngrams(right)
+    if not left_set or not right_set:
+        return 0.0
+    intersection = len(left_set.intersection(right_set))
+    union = len(left_set.union(right_set))
+    return intersection / union if union else 0.0
+
+
+def _build_token_stats(rows: list[dict]) -> dict:
+    document_frequency: dict[str, int] = {}
+    for row in rows:
+        blob = " ".join(
+            [
+                str(row.get("name", "")),
+                str(row.get("summary", "")),
+                str(row.get("address", "")),
+                str(row.get("region", "")),
+                str(row.get("province", "")),
+                " ".join(row.get("recommendedBusinesses", []) if isinstance(row.get("recommendedBusinesses"), list) else []),
+                " ".join(row.get("targetCustomers", []) if isinstance(row.get("targetCustomers"), list) else []),
+                str(row.get("dataSource", "")),
+            ]
+        ).lower()
+        for token in set(_tokenize(blob)):
+            document_frequency[token] = document_frequency.get(token, 0) + 1
+    return {"n_docs": max(1, len(rows)), "df": document_frequency}
+
+
+def _idf(token: str, token_stats: dict) -> float:
+    n_docs = int(token_stats.get("n_docs", 1))
+    df_map = token_stats.get("df", {})
+    df = int(df_map.get(token, 0)) if isinstance(df_map, dict) else 0
+    return math.log((n_docs + 1) / (df + 1)) + 1.0
 
 
 def _extract_focus_tokens(query_tokens: set[str], query_regions: set[str]) -> set[str]:
@@ -213,12 +235,6 @@ def _out_of_scope_notice(user_message: str) -> str:
     return f"현재 서비스는 광주/전남 중심 데이터만 제공합니다. ({unique}은/는 범위 밖)"
 
 
-def _is_seaside_query(query_tokens: set[str], query_text: str) -> bool:
-    if any(token in query_tokens for token in SEA_KEYWORDS):
-        return True
-    return any(keyword in query_text for keyword in SEA_KEYWORDS)
-
-
 def _region_match(row: dict, regions: set[str]) -> bool:
     if not regions:
         return False
@@ -239,83 +255,31 @@ def _locality_match(row: dict, locality_tokens: set[str]) -> bool:
     return any(token in blob for token in locality_tokens)
 
 
-def _is_seaside_row(row: dict) -> bool:
-    blob = " ".join(
-        [
-            str(row.get("name", "")),
-            str(row.get("summary", "")),
-            str(row.get("address", "")),
-            " ".join(
-                row.get("recommendedBusinesses", [])
-                if isinstance(row.get("recommendedBusinesses"), list)
-                else []
-            ),
-        ]
-    ).lower()
-    return any(keyword in blob for keyword in SEA_KEYWORDS)
-
-
-def _is_meal_row(row: dict) -> bool:
-    rec_values = row.get("recommendedBusinesses", [])
-    rec_blob = " ".join(rec_values if isinstance(rec_values, list) else []).lower()
-    text_blob = " ".join(
-        [
-            str(row.get("name", "")),
-            str(row.get("summary", "")),
-            str(row.get("address", "")),
-            rec_blob,
-        ]
-    ).lower()
-    return any(keyword in text_blob for keyword in MEAL_KEYWORDS)
-
-
 def _reorder_trip_ids_meal_alternating(
     region_ids: list[int], rows: list[dict], items_per_day: int = TRIP_ITEMS_PER_DAY
 ) -> list[int]:
-    if not region_ids:
-        return []
-
-    row_map = {int(row["id"]): row for row in rows}
-    reordered: list[int] = []
-
-    for start in range(0, len(region_ids), items_per_day):
-        day_chunk = region_ids[start : start + items_per_day]
-        meal_ids: list[int] = []
-        sightseeing_ids: list[int] = []
-
-        for region_id in day_chunk:
-            row = row_map.get(region_id)
-            if row and _is_meal_row(row):
-                meal_ids.append(region_id)
-            else:
-                sightseeing_ids.append(region_id)
-
-        day_ordered: list[int] = []
-        for index in range(len(day_chunk)):
-            prefer_meal = index % 2 == 0
-            primary_pool = meal_ids if prefer_meal else sightseeing_ids
-            secondary_pool = sightseeing_ids if prefer_meal else meal_ids
-
-            if primary_pool:
-                day_ordered.append(primary_pool.pop(0))
-            elif secondary_pool:
-                day_ordered.append(secondary_pool.pop(0))
-
-        reordered.extend(day_ordered)
-
-    return reordered
+    # 카테고리 하드코딩 없이 점수순 추천을 유지합니다.
+    deduped: list[int] = []
+    seen: set[int] = set()
+    for region_id in region_ids:
+        if region_id in seen:
+            continue
+        seen.add(region_id)
+        deduped.append(region_id)
+    return deduped
 
 
 def _score_row(
     row: dict,
+    query_text: str,
     scoring_tokens: set[str],
     query_regions: set[str],
     specific_regions: set[str],
     focus_tokens: set[str],
     locality_tokens: set[str],
-    seaside_query: bool,
     day_trip: bool,
-) -> tuple[int, int, str]:
+    token_stats: dict,
+) -> tuple[int, float, str]:
     name = str(row.get("name", ""))
     summary = str(row.get("summary", ""))
     source = str(row.get("dataSource", ""))
@@ -334,51 +298,66 @@ def _score_row(
     rec_tokens = _tokenize(rec)
     target_tokens = _tokenize(target)
 
-    score = len(scoring_tokens.intersection(doc_tokens)) * 2
-    score += len(scoring_tokens.intersection(name_tokens)) * 4
-    score += len(scoring_tokens.intersection(summary_tokens)) * 3
-    score += len(scoring_tokens.intersection(rec_tokens)) * 2
-    score += len(scoring_tokens.intersection(target_tokens)) * 2
-    score += len(scoring_tokens.intersection(source_tokens))
-    score += _source_weight(source)
+    score = 0.0
+    matched_tokens: set[str] = set()
+    for token in scoring_tokens:
+        token_idf = _idf(token, token_stats)
+        if token in name_tokens:
+            score += 6.0 * token_idf
+            matched_tokens.add(token)
+        if token in summary_tokens:
+            score += 4.0 * token_idf
+            matched_tokens.add(token)
+        if token in rec_tokens:
+            score += 3.0 * token_idf
+            matched_tokens.add(token)
+        if token in target_tokens:
+            score += 2.0 * token_idf
+            matched_tokens.add(token)
+        if token in source_tokens:
+            score += 1.0 * token_idf
+            matched_tokens.add(token)
+
+    coverage = len(matched_tokens) / max(1, len(scoring_tokens))
+    score += coverage * 22.0
+
+    semantic_sim = _jaccard_similarity(
+        query_text,
+        " ".join([name, summary, address, rec, target, source]),
+    )
+    score += semantic_sim * 18.0
     if image_url.startswith("http"):
         score += 2
 
     region_blob = " ".join([region, province, address, name, summary]).lower()
     if specific_regions:
         if _region_match(row, specific_regions):
-            score += 12
+            score += 12.0
         else:
-            score -= 14 if day_trip else 10
+            score -= 14.0 if day_trip else 10.0
     elif query_regions:
         if _region_match(row, query_regions):
-            score += 6
+            score += 6.0
         elif day_trip:
-            score -= 4
+            score -= 4.0
         else:
-            score -= 2
+            score -= 2.0
 
     for token in focus_tokens:
         if token in name.lower():
-            score += 9
+            score += 9.0
         elif token in address.lower():
-            score += 6
+            score += 6.0
         elif token in summary.lower():
-            score += 5
+            score += 5.0
         elif token in region_blob:
-            score += 3
+            score += 3.0
 
     if locality_tokens:
         if _locality_match(row, locality_tokens):
-            score += 14
+            score += 14.0
         else:
-            score -= 4
-
-    if seaside_query:
-        if _is_seaside_row(row):
-            score += 16
-        else:
-            score -= 8
+            score -= 4.0
 
     return int(row["id"]), score, name
 
@@ -403,18 +382,19 @@ def _score_regions(user_message: str) -> list[int]:
     scoring_tokens = _build_scoring_tokens(query_tokens)
     focus_tokens = _extract_focus_tokens(query_tokens, query_regions)
     locality_tokens = _extract_locality_tokens(query_tokens)
-    seaside_query = _is_seaside_query(query_tokens, query_text)
+    token_stats = _build_token_stats(rows)
 
     scored = [
         _score_row(
             row,
+            query_text,
             scoring_tokens,
             query_regions,
             specific_regions,
             focus_tokens,
             locality_tokens,
-            seaside_query,
             day_trip,
+            token_stats,
         )
         for row in rows
     ]
@@ -454,22 +434,29 @@ def _build_recommendation_ids(
     scoring_tokens = _build_scoring_tokens(query_tokens)
     focus_tokens = _extract_focus_tokens(query_tokens, query_regions)
     locality_tokens = _extract_locality_tokens(query_tokens)
-    seaside_query = _is_seaside_query(query_tokens, query_text)
+    token_stats = _build_token_stats(rows)
 
-    scored: list[tuple[int, int, str, dict]] = []
+    scored: list[tuple[int, float, str, dict]] = []
     for row in rows:
         region_id, score, name = _score_row(
             row,
+            query_text,
             scoring_tokens,
             query_regions,
             specific_regions,
             focus_tokens,
             locality_tokens,
-            seaside_query,
             day_trip,
+            token_stats,
         )
         scored.append((region_id, score, name, row))
     scored.sort(key=lambda item: (item[1], item[2]), reverse=True)
+    has_specific_region_match = any(
+        _region_match(row, specific_regions) for row in rows
+    ) if specific_regions else False
+    has_locality_match = any(
+        _locality_match(row, locality_tokens) for row in rows
+    ) if locality_tokens else False
 
     used_ids: set[int] = set()
     used_names: set[str] = set()
@@ -485,17 +472,11 @@ def _build_recommendation_ids(
         used_names.add(name_key)
         picked.append(region_id)
 
-    # 1) 높은 관련도만 우선 채택
-    if seaside_query:
-        for region_id, score, _, row in scored:
-            if score < 6 or not _is_seaside_row(row):
-                continue
-            push(region_id, row)
-            if len(picked) >= size:
-                return picked[:size]
-
+    # 1) 높은 관련도만 우선 채택 (질의별 동적 기준)
+    top_score = scored[0][1] if scored else 0.0
+    dynamic_threshold = max(2.0, top_score * 0.35)
     for region_id, score, _, row in scored:
-        if score < 6:
+        if score < dynamic_threshold:
             continue
         push(region_id, row)
         if len(picked) >= size:
@@ -576,7 +557,13 @@ def _build_recommendation_ids(
             if len(picked) >= size:
                 return picked[:size]
 
-    # 3) 남은 슬롯은 낮은 점수 순서대로 최소 보충
+    # 3) 질의 지역/로컬리티를 전혀 찾지 못하면 무관한 전역 추천을 피합니다.
+    if (specific_regions and not has_specific_region_match) or (
+        locality_tokens and not has_locality_match
+    ):
+        return picked[:size]
+
+    # 4) 남은 슬롯은 낮은 점수 순서대로 최소 보충
     for region_id, _, _, row in scored:
         push(region_id, row)
         if len(picked) >= size:
@@ -641,6 +628,10 @@ def get_chat_result(user_message: str) -> dict:
     recommended_ids = _normalize_recommended_ids(
         baseline_ids, valid_region_ids, baseline_ids
     )
+    if not recommended_ids:
+        no_match_answer = "요청하신 지역/조건과 정확히 일치하는 데이터를 찾지 못했습니다. 지역명이나 키워드를 조금 바꿔서 다시 입력해 주세요."
+        answer = f"{scope_notice}\n{no_match_answer}" if scope_notice else no_match_answer
+        return {"answer": answer, "recommendedRegionIds": []}
     if not api_key:
         fallback = _standard_answer_from_ids(recommended_ids, rows)
         answer = f"{scope_notice}\n{fallback}" if scope_notice else fallback

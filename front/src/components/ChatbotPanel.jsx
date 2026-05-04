@@ -6,7 +6,7 @@ export default function ChatbotPanel({ onRecommendFeed }) {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      text: "광주/전남 랜덤 추천이 이미 적용되어 있어요. 원하는 여행/업종/분위기를 입력하면 Top-K 기반으로 3x3 피드를 다시 추천해드릴게요."
+      text: "랜덤 추천으로 나와있어요. 원하는 여행/업종/분위기를 입력하면 새롭게 다시 피드를 추천드릴게요."
     }
   ]);
   const [input, setInput] = useState("");
@@ -51,7 +51,7 @@ export default function ChatbotPanel({ onRecommendFeed }) {
 
   return (
     <section className="chatbot-panel">
-      <h2 className="chatbot-title">LocalVibe 챗봇 (광주·전남)</h2>
+      <h2 className="chatbot-title">LocalVibe 챗봇</h2>
       <div className="chatbot-messages">
         {messages.map((message, index) => (
           <div key={`${message.role}-${index}`} className={`chatbot-message ${message.role}`}>
