@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { flushSync } from 'react-dom';
+import ComparisonTable from './ui/ComparisonTable';
+import ImageGallery from './ui/ImageGallery';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -45,6 +47,72 @@ function parseTripDuration(text) {
   }
 
   return null;
+}
+
+const VISUAL_INTENT_PATTERNS = [
+  /비교|vs\b|VS\b|차이|대비/,
+  /사진|이미지|보고\s*싶/,
+];
+
+const HELP_TEXT = `📋 사용 가능한 기능을 알려드릴게요!
+
+🗺️ 장소 추천 & 일정 관리
+• "[지역] [테마] 추천해줘" → 로드맵에 장소 추가
+• "[N]일" / "[N]박 [N]일" → 여행 기간 설정
+• "[N]일 더 추가해줘" → 기간 연장
+• "[장소명] 제외해줘" → 장소 삭제
+• "[장소명] 말고 다른 곳으로 바꿔줘" → 장소 교체
+
+🖼️ 시각화
+• "[장소A] vs [장소B] 비교해줘" → 두 장소 비교 카드 팝업
+• "[테마] 사진 보고 싶어" → 이미지 갤러리 팝업`;
+
+const HELP_PATTERNS = [
+  /도움말|도움|헬프|help/i,
+  /뭐\s*(할|해|도와|가능)/,
+  /기능\s*(뭐|있|알려|목록)/,
+  /어떻게\s*(써|사용|활용)/,
+  /사용법|설명해/,
+];
+
+function isHelpIntent(text) {
+  return HELP_PATTERNS.some(p => p.test(text));
+}
+
+const UNSUPPORTED_PATTERNS = [
+  /경로|동선|루트|지도로\s*보여/,
+  /날씨|기온|비\s*오|맑|흐림/,
+  /예약|가격|요금|비용|얼마/,
+  /영업\s*시간|몇\s*시|오픈|클로즈/,
+  /교통|버스|지하철|기차|택시|주차/,
+];
+
+function isUnsupportedIntent(text) {
+  return UNSUPPORTED_PATTERNS.some(p => p.test(text));
+}
+
+function isVisualIntent(text) {
+  return VISUAL_INTENT_PATTERNS.some(pattern => pattern.test(text));
+}
+
+const ACTION_COMPONENT_MAP = {
+  comparePlaces: (data) => <ComparisonTable items={data?.items ?? []} />,
+  showImageGallery: (data) => <ImageGallery images={data?.images ?? []} />,
+};
+
+const ACTION_LABEL_MAP = {
+  comparePlaces: '비교 보기',
+  showImageGallery: '이미지 갤러리 보기',
+};
+
+async function callVisualAction(message, currentLocationNames) {
+  const response = await fetch(`${API_BASE_URL}/api/visual`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, currentLocationNames }),
+  });
+  if (!response.ok) throw new Error('visual api error');
+  return response.json();
 }
 
 function isDurationOnlyMessage(text) {
@@ -159,23 +227,36 @@ function parseRemoveIntent(text) {
  *   - onTripLocationsChange: Function called with recommended region IDs
  *   - currentLocations: Array of currently added locations (for context)
  */
-export default function TripChatPanel({
+const INITIAL_MESSAGE = {
+  role: 'assistant',
+  text: '🗺️ 어디로 여행 갈까요? 지역, 테마, 기간을 자유롭게 말해주세요!\n사용 가능한 기능이 궁금하시면 "도움말"을 입력해보세요.',
+};
+
+function TripChatPanelInner({
   onTripLocationsChange,
   onReplaceLocation,
+  onRemoveLocation,
   resolveRegionName,
   currentLocations = [],
+  onResetRef,
 }) {
-  const [messages, setMessages] = useState([
-    {
-      role: 'assistant',
-      text: '🗺️ 먼저 여행 기간을 알려주세요! 예: 2박 3일, 3일, 1박',
-    },
-  ]);
+  const [messages, setMessages] = useState([INITIAL_MESSAGE]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [lastLocationCount, setLastLocationCount] = useState(0);
   const [tripDuration, setTripDuration] = useState(null);
+  const [visualPopup, setVisualPopup] = useState(null); // { componentType, uiData }
   const messagesContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (onResetRef) {
+      onResetRef.current = () => {
+        setMessages([INITIAL_MESSAGE]);
+        setTripDuration(null);
+        setLastLocationCount(0);
+      };
+    }
+  }, [onResetRef]);
 
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -246,15 +327,17 @@ export default function TripChatPanel({
       setInput('');
     });
 
+    if (isHelpIntent(trimmed)) {
+      setMessages(prev => [...prev, { role: 'assistant', text: HELP_TEXT }]);
+      return;
+    }
+
     const removeIntentName = parseRemoveIntent(trimmed);
     if (hasRemoveIntent(trimmed)) {
       if (currentLocations.length === 0) {
         setMessages(prev => [
           ...prev,
-          {
-            role: 'assistant',
-            text: '현재 로드맵이 비어 있어 제거할 장소가 없습니다. 먼저 장소를 추가해 주세요.',
-          },
+          { role: 'assistant', text: '현재 일정이 비어 있어요. 먼저 장소를 추가해 주세요.' },
         ]);
         return;
       }
@@ -266,12 +349,10 @@ export default function TripChatPanel({
         );
 
         if (matchedLocation) {
+          onRemoveLocation?.(matchedLocation.id);
           setMessages(prev => [
             ...prev,
-            {
-              role: 'assistant',
-              text: `${matchedLocation.name}은(는) 왼쪽 로드맵의 점(노드)에 마우스를 올리면 나오는 제거 버튼으로 바로 뺄 수 있어요.`,
-            },
+            { role: 'assistant', text: `${matchedLocation.name}을(를) 일정에서 제외했어요.` },
           ]);
           return;
         }
@@ -281,7 +362,7 @@ export default function TripChatPanel({
         ...prev,
         {
           role: 'assistant',
-          text: '제거는 왼쪽 로드맵 노드에 마우스를 올리면 나타나는 제거 버튼으로 할 수 있어요.',
+          text: `제외할 장소를 찾지 못했어요. 현재 일정: ${currentLocations.map(l => l.name).join(', ')}`,
         },
       ]);
       return;
@@ -296,38 +377,31 @@ export default function TripChatPanel({
     const resolvedDuration = parsedDuration || incrementedDuration;
     const shouldCaptureDuration = Boolean(resolvedDuration);
 
+    const DEFAULT_DURATION = { nights: 1, days: 2, maxLocations: 10 };
+
     if (!tripDuration && !resolvedDuration) {
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          text: '일정을 먼저 맞춰볼게요. 몇 박 몇 일 여행인지 알려주세요! 예: 2박 3일',
-        },
-      ]);
-      return;
+      // 기간 없으면 기본값으로 자동 설정 후 계속 진행
+      setTripDuration(DEFAULT_DURATION);
     }
 
     if (shouldCaptureDuration) {
       setTripDuration(resolvedDuration);
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'assistant',
-          text:
-            incrementedDuration && !parsedDuration
-              ? `일정을 업데이트했어요! ${resolvedDuration.nights}박 ${resolvedDuration.days}일 기준으로 최대 ${resolvedDuration.maxLocations}개 장소까지 추천해드릴게요.`
-              : `좋아요! ${resolvedDuration.nights}박 ${resolvedDuration.days}일 기준으로 최대 ${resolvedDuration.maxLocations}개 장소까지 추천해드릴게요. 이제 가고 싶은 지역이나 테마를 알려주세요.`,
-        },
-      ]);
-
       if (isDurationOnlyMessage(trimmed)) {
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            text: `${resolvedDuration.nights}박 ${resolvedDuration.days}일로 설정했어요. 어느 지역이나 테마를 원하시나요?`,
+          },
+        ]);
         return;
       }
+      // 기간 + 지역이 함께 오면 확인 메시지 없이 추천으로 바로 진행
     }
 
     const activeDuration = shouldCaptureDuration
       ? resolvedDuration
-      : tripDuration;
+      : (tripDuration ?? DEFAULT_DURATION);
     const requestedAddCount = parseRequestedAddCount(trimmed);
     const replaceLocationName = parseReplaceIntent(trimmed);
 
@@ -432,6 +506,45 @@ export default function TripChatPanel({
       }
     }
 
+    // 시각화 요청 → /api/visual 직접 호출
+    if (isVisualIntent(trimmed)) {
+      setIsLoading(true);
+      try {
+        const currentNames = currentLocations.map(l => l.name);
+        const data = await callVisualAction(trimmed, currentNames);
+        setMessages(prev => [
+          ...prev,
+          {
+            role: 'assistant',
+            text: data.answer ?? '',
+            componentType: data.componentType ?? null,
+            uiData: data.uiData ?? null,
+          },
+        ]);
+      } catch (err) {
+        console.error('visual action error:', err);
+        setMessages(prev => [
+          ...prev,
+          { role: 'assistant', text: '시각화 요청 처리 중 오류가 발생했습니다.' },
+        ]);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    // 명백히 지원 안 되는 요청이면 안내 메시지
+    if (isUnsupportedIntent(trimmed)) {
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          text: '저는 여행 장소 추천, 장소 비교, 이미지 갤러리를 도와드릴 수 있어요!\n예: "광주 카페 추천해줘" / "달마고도 vs 불갑사 비교해줘" / "감성 카페 사진 보고 싶어"',
+        },
+      ]);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -497,7 +610,7 @@ export default function TripChatPanel({
             ...prev,
             {
               role: 'assistant',
-              text: `현재 ${maxLocations}개 장소로 가득 찼습니다. 기간을 연장하면 더 추가할 수 있어요! 예: "1일 더 추가해줘"`,
+              text: `현재 ${maxLocations}개 장소로 가득 찼어요! 기간을 늘리거나, 특정 장소를 교체하고 싶으시면 말씀해주세요.\n예: "1일 더 추가해줘" / "달마고도 말고 다른 곳으로 바꿔줘"`,
             },
           ]);
         } else if (newIds.length === 0) {
@@ -576,6 +689,16 @@ export default function TripChatPanel({
               <span className="chat-icon">🤖</span>
             )}
             {message.text}
+            {message.componentType && ACTION_COMPONENT_MAP[message.componentType] && (
+              <div className="copilot-ui-button-wrap">
+                <button
+                  className="copilot-ui-open-btn"
+                  onClick={() => setVisualPopup({ componentType: message.componentType, uiData: message.uiData })}
+                >
+                  {ACTION_LABEL_MAP[message.componentType] ?? '시각화 보기'} →
+                </button>
+              </div>
+            )}
           </motion.div>
         ))}
         {isLoading && (
@@ -594,6 +717,16 @@ export default function TripChatPanel({
           </motion.div>
         )}
       </div>
+
+      {/* Visual Popup Modal */}
+      {visualPopup && (
+        <div className="visual-popup-overlay" onClick={() => setVisualPopup(null)}>
+          <div className="visual-popup-content" onClick={e => e.stopPropagation()}>
+            <button className="visual-popup-close" onClick={() => setVisualPopup(null)}>✕</button>
+            {ACTION_COMPONENT_MAP[visualPopup.componentType]?.(visualPopup.uiData)}
+          </div>
+        </div>
+      )}
 
       {/* Input form */}
       <form className="trip-chat-form" onSubmit={handleSubmit}>
@@ -615,4 +748,8 @@ export default function TripChatPanel({
       </form>
     </section>
   );
+}
+
+export default function TripChatPanel({ onResetRef, ...props }) {
+  return <TripChatPanelInner {...props} onResetRef={onResetRef} />;
 }
