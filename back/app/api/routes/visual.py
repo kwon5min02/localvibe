@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.api.routes.copilotkit import (
+from app.api.routes.place_actions import (
     compare_places,
     show_image_gallery,
 )
