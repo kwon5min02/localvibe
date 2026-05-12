@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { flushSync } from 'react-dom';
 import ComparisonTable from './ui/ComparisonTable';
 import ImageGallery from './ui/ImageGallery';
+import MultiMarkerMap from './ui/MultiMarkerMap';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -52,6 +53,7 @@ function parseTripDuration(text) {
 const VISUAL_INTENT_PATTERNS = [
   /비교|vs\b|VS\b|차이|대비/,
   /사진|이미지|보고\s*싶/,
+  /지도|마커|위치.*보여/,
 ];
 
 const HELP_TEXT = `📋 사용 가능한 기능을 알려드릴게요!
@@ -65,7 +67,8 @@ const HELP_TEXT = `📋 사용 가능한 기능을 알려드릴게요!
 
 🖼️ 시각화
 • "[장소A] vs [장소B] 비교해줘" → 두 장소 비교 카드 팝업
-• "[테마] 사진 보고 싶어" → 이미지 갤러리 팝업`;
+• "[테마] 사진 보고 싶어" → 이미지 갤러리 팝업
+• "지도 보여줘" → 현재 일정 전체 마커 지도 팝업`;
 
 const HELP_PATTERNS = [
   /도움말|도움|헬프|help/i,
@@ -98,11 +101,13 @@ function isVisualIntent(text) {
 const ACTION_COMPONENT_MAP = {
   comparePlaces: (data) => <ComparisonTable items={data?.items ?? []} />,
   showImageGallery: (data) => <ImageGallery images={data?.images ?? []} />,
+  showMap: (data) => <MultiMarkerMap locations={data?.locations ?? []} />,
 };
 
 const ACTION_LABEL_MAP = {
   comparePlaces: '비교 보기',
   showImageGallery: '이미지 갤러리 보기',
+  showMap: '지도에서 보기',
 };
 
 async function callVisualAction(message, currentLocationNames) {
@@ -504,6 +509,21 @@ function TripChatPanelInner({
         ]);
         return;
       }
+    }
+
+    // 지도 요청 → currentLocations 직접 사용 (백엔드 호출 없음)
+    if (/지도|마커|위치.*보여/.test(trimmed)) {
+      if (currentLocations.length === 0) {
+        setMessages(prev => [...prev, { role: 'assistant', text: '아직 일정에 장소가 없어요. 먼저 장소를 추가해주세요!' }]);
+      } else {
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          text: `현재 일정 ${currentLocations.length}개 장소를 지도에 표시할게요.`,
+          componentType: 'showMap',
+          uiData: { locations: currentLocations },
+        }]);
+      }
+      return;
     }
 
     // 시각화 요청 → /api/visual 직접 호출

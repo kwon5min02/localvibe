@@ -9,9 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@copilotkit/react-core": "^1.57.1",
-    "@copilotkit/react-ui": "^1.57.1",
-    "@react-oauth/google": "^0.12.2",
+"@react-oauth/google": "^0.12.2",
     "framer-motion": "^12.38.0",
     "html2canvas": "^1.4.1",
     "react": "^18.3.1",
