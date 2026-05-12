@@ -197,7 +197,11 @@ export default function RoadMap({
                     </div>
                   </button>
 
-                  <div className="sroadmap-body">
+                  <div
+                    className="sroadmap-body"
+                    onClick={() => onNodeClick?.(node.clickId)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <h4 className="sroadmap-title">{node.name}</h4>
                     <p className="sroadmap-description">{node.description}</p>
                   </div>

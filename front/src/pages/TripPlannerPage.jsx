@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import RoadMap from '../components/RoadMap';
 import TripChatPanel from '../components/TripChatPanel';
 import RegionModal from '../components/RegionModal';
@@ -15,6 +15,7 @@ const API_BASE_URL =
 export default function TripPlannerPage({ regions = [] }) {
   // Roadmap locations (user's selected trip itinerary)
   const [roadmapLocations, setRoadmapLocations] = useState([]);
+  const chatResetRef = useRef(null);
 
   // Selected region for detail modal
   const [selectedLocation, setSelectedLocation] = useState(null);
@@ -181,6 +182,7 @@ export default function TripPlannerPage({ regions = [] }) {
     setRoadmapLocations([]);
     setSelectedLocation(null);
     setInsightLocation(null);
+    chatResetRef.current?.();
   };
 
   return (
@@ -240,8 +242,10 @@ export default function TripPlannerPage({ regions = [] }) {
           <TripChatPanel
             onTripLocationsChange={handleTripLocationsChange}
             onReplaceLocation={handleReplaceLocation}
+            onRemoveLocation={handleRemoveLocation}
             resolveRegionName={resolveRegionName}
             currentLocations={roadmapLocations}
+            onResetRef={chatResetRef}
           />
         </div>
       </div>

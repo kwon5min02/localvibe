@@ -6,3 +6,4 @@ requests
 beautifulsoup4
 google-auth
 python-jose[cryptography]
+copilotkit
