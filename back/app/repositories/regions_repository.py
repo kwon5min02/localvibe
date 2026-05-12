@@ -671,6 +671,7 @@ def _normalize_kto_item(
         "busyHours": list(dict.fromkeys(busy_hours)),
         "targetCustomers": list(dict.fromkeys(target_customers)),
         "dataSource": source_name,
+        "contentTypeId": content_type,
     }
 
 
@@ -1751,6 +1752,24 @@ def load_regions() -> list[dict]:
     _runtime_cache["signature"] = signature
     _runtime_cache["id_index"] = _build_id_index(fallback_regions)
     return fallback_regions
+
+
+def fetch_kto_regions_for_data_pipeline() -> list[dict]:
+    """KTO 관광정보 수집 결과(기존 regions 정규화 dict). data_pipeline 전용."""
+    kto_service_key = os.getenv("KTO_SERVICE_KEY", "").strip()
+    if not kto_service_key:
+        return []
+    timeout_seconds = int(os.getenv("JN_API_TIMEOUT_SECONDS", "12"))
+    retry_count = max(1, int(os.getenv("JN_API_RETRY_COUNT", "2")))
+    base_retry_wait = float(os.getenv("JN_API_RETRY_WAIT_SECONDS", "0.4"))
+    rate_limit_wait = float(os.getenv("JN_API_429_WAIT_SECONDS", "1.2"))
+    return _fetch_kto_regions(
+        kto_service_key,
+        timeout_seconds,
+        retry_count,
+        base_retry_wait,
+        rate_limit_wait,
+    )
 
 
 def get_region_by_id(region_id: int) -> Optional[dict]:

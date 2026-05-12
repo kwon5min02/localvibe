@@ -18,6 +18,7 @@ back/.pycache/
 # Environment files
 .env
 .env.*
+!**/.env.example
 back/.env
 
 # Cursor / IDE artifacts

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import TopHeader from './components/TopHeader';
-import ChatbotPanel from './components/ChatbotPanel';
+import GallerySearchBox from './components/GallerySearchBox';
 import RegionGallery from './components/RegionGallery';
 import RegionModal from './components/RegionModal';
 import { defaultRegions } from './data/defaultRegions';
@@ -10,6 +10,50 @@ import MyPage from './pages/MyPage';
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 const FEED_SIZE = 9;
+const GALLERY_VECTOR_ACTIVE_KEY = 'lv_gallery_vector_active';
+const GALLERY_SEARCH_RESULTS_KEY = 'lv_gallery_search_results';
+
+function isGalleryVectorFeedLocked() {
+  if (typeof sessionStorage === 'undefined') {
+    return false;
+  }
+  try {
+    return sessionStorage.getItem(GALLERY_VECTOR_ACTIVE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function readPersistedGalleryRegions() {
+  if (typeof sessionStorage === 'undefined') {
+    return null;
+  }
+  try {
+    if (sessionStorage.getItem(GALLERY_VECTOR_ACTIVE_KEY) !== '1') {
+      return null;
+    }
+    const raw = sessionStorage.getItem(GALLERY_SEARCH_RESULTS_KEY);
+    if (!raw) {
+      return null;
+    }
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || arr.length === 0) {
+      return null;
+    }
+    return arr;
+  } catch {
+    return null;
+  }
+}
+
+function persistGalleryVectorResults(mapped) {
+  try {
+    sessionStorage.setItem(GALLERY_VECTOR_ACTIVE_KEY, '1');
+    sessionStorage.setItem(GALLERY_SEARCH_RESULTS_KEY, JSON.stringify(mapped));
+  } catch {
+    // 사생활 보호 모드·할당량 등
+  }
+}
 const SIDEBAR_MENU = [
   { id: 'gallery', label: '🗺 지역 갤러리', section: '메인' },
   { id: 'planner', label: '✈ 여행 플래너', section: '메인' },
@@ -82,6 +126,42 @@ function pickFeedItems(items, size = FEED_SIZE) {
   return picked.slice(0, size);
 }
 
+function mapSearchHitToRegion(row, regionMap) {
+  const id = Number(row.place_id);
+  const base = regionMap.get(id);
+  const sim =
+    row.pinecone_similarity != null && !Number.isNaN(Number(row.pinecone_similarity))
+      ? `Pinecone 유사도 ${Number(row.pinecone_similarity).toFixed(3)}`
+      : '';
+  const rank =
+    row.score != null && !Number.isNaN(Number(row.score))
+      ? `랭킹점수 ${Number(row.score).toFixed(3)}`
+      : '';
+  const bits = [row.category, row.region, sim, rank].filter(Boolean).join(' · ');
+  return {
+    id,
+    name: row.name || base?.name || '이름 없음',
+    imageUrl: base?.imageUrl || '',
+    summary: base?.summary || bits || '상세 설명이 없습니다.',
+    summaryShort: sim || base?.summaryShort,
+    address: base?.address,
+    latitude: base?.latitude,
+    longitude: base?.longitude,
+    region: row.region || base?.region,
+    province: row.province || base?.province,
+    dataSource: base?.dataSource,
+    sourceId: base?.sourceId,
+    recommendedBusinesses:
+      base?.recommendedBusinesses?.length > 0
+        ? base.recommendedBusinesses
+        : row.category
+          ? [row.category]
+          : [],
+    busyHours: base?.busyHours || [],
+    targetCustomers: base?.targetCustomers || [],
+  };
+}
+
 export default function App() {
   const [authToken, setAuthToken] = useState(() => localStorage.getItem('lv_access_token') || '');
   const [currentUser, setCurrentUser] = useState(() => {
@@ -93,7 +173,10 @@ export default function App() {
     }
   });
   const [regions, setRegions] = useState(defaultRegions);
-  const [displayedRegions, setDisplayedRegions] = useState(defaultRegions);
+  const [displayedRegions, setDisplayedRegions] = useState(() => {
+    const persisted = readPersistedGalleryRegions();
+    return persisted ?? defaultRegions;
+  });
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [insightRegion, setInsightRegion] = useState(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
@@ -106,6 +189,14 @@ export default function App() {
       return [];
     }
   });
+  const [modalCrawlImages, setModalCrawlImages] = useState([]);
+  const [modalArticle, setModalArticle] = useState(null);
+  const [modalArticleLoading, setModalArticleLoading] = useState(false);
+  const [gallerySearchBusy, setGallerySearchBusy] = useState(false);
+  /** 갤러리 벡터 검색으로 `displayedRegions`를 채운 뒤에는 초기 `/api/regions` 응답이 늦게 도착해도 덮어쓰지 않습니다. */
+  const galleryVectorSearchActiveRef = useRef(isGalleryVectorFeedLocked());
+  /** 가장 최근에 시작한 검색만 결과를 반영합니다(늦게 도착한 이전 요청 무시). */
+  const gallerySearchSeqRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -124,11 +215,21 @@ export default function App() {
           data.regions.length > 0
         ) {
           setRegions(data.regions);
-          setDisplayedRegions(pickFeedItems(data.regions));
+          if (
+            !galleryVectorSearchActiveRef.current &&
+            !isGalleryVectorFeedLocked()
+          ) {
+            setDisplayedRegions(pickFeedItems(data.regions));
+          }
         }
       } catch {
         // 백엔드 미실행 상태에서도 UI 초안이 보이도록 기본 데이터를 유지합니다.
-        setDisplayedRegions(pickFeedItems(defaultRegions));
+        if (
+          !galleryVectorSearchActiveRef.current &&
+          !isGalleryVectorFeedLocked()
+        ) {
+          setDisplayedRegions(pickFeedItems(defaultRegions));
+        }
       }
     }
 
@@ -176,44 +277,114 @@ export default function App() {
     };
   }, [selectedRegion]);
 
+  useEffect(() => {
+    const id = selectedRegion?.id;
+    if (!id) {
+      setModalCrawlImages([]);
+      setModalArticle(null);
+      setModalArticleLoading(false);
+      return;
+    }
+    let cancelled = false;
+    async function loadPlaceExtras() {
+      setModalCrawlImages([]);
+      setModalArticle(null);
+      setModalArticleLoading(true);
+      try {
+        await fetch(`${API_BASE_URL}/api/places/${id}/crawl`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        if (cancelled) {
+          return;
+        }
+        const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`);
+        if (imgRes.ok) {
+          const imgData = await imgRes.json();
+          const urls = (imgData.images || []).map((x) => x.url).filter(Boolean);
+          if (!cancelled) {
+            setModalCrawlImages(urls);
+          }
+        }
+        const artRes = await fetch(`${API_BASE_URL}/api/places/${id}/article`);
+        if (cancelled) {
+          return;
+        }
+        if (artRes.ok) {
+          const art = await artRes.json();
+          if (!cancelled) {
+            setModalArticle({ title: art.title || '', content: art.content || '' });
+          }
+        } else if (!cancelled) {
+          setModalArticle({ title: '', content: '아티클을 불러오지 못했습니다.' });
+        }
+      } catch {
+        if (!cancelled) {
+          setModalArticle({ title: '', content: '네트워크 오류로 상세를 불러오지 못했습니다.' });
+        }
+      } finally {
+        if (!cancelled) {
+          setModalArticleLoading(false);
+        }
+      }
+    }
+    loadPlaceExtras();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRegion?.id]);
+
   const regionMap = useMemo(() => {
     return new Map(regions.map(region => [region.id, region]));
   }, [regions]);
 
-  const handleRecommendFeed = recommendedIds => {
-    if (!Array.isArray(recommendedIds) || recommendedIds.length === 0) {
-      return;
-    }
-
-    const selected = recommendedIds
-      .map(id => regionMap.get(Number(id)))
-      .filter(Boolean);
-    if (selected.length === 0) {
-      return;
-    }
-    const uniqueSelected = [];
-    const selectedIdSet = new Set();
-    for (const item of selected) {
-      if (selectedIdSet.has(item.id)) {
-        continue;
+  const handleGalleryVectorSearch = useCallback(
+    async (q) => {
+      const trimmed = String(q || '').trim();
+      if (!trimmed) {
+        return false;
       }
-      uniqueSelected.push(item);
-      selectedIdSet.add(item.id);
-      if (uniqueSelected.length >= FEED_SIZE) {
-        break;
+      const seq = ++gallerySearchSeqRef.current;
+      setGallerySearchBusy(true);
+      try {
+        const url = new URL(`${API_BASE_URL}/api/search`);
+        url.searchParams.set('q', trimmed);
+        const res = await fetch(url.toString());
+        if (seq !== gallerySearchSeqRef.current) {
+          return false;
+        }
+        if (!res.ok) {
+          window.alert('검색 요청에 실패했습니다.');
+          return false;
+        }
+        const data = await res.json();
+        const rows = Array.isArray(data?.results) ? data.results : [];
+        const mapped = rows.map((row) => mapSearchHitToRegion(row, regionMap));
+        if (seq !== gallerySearchSeqRef.current) {
+          return false;
+        }
+        if (mapped.length > 0) {
+          galleryVectorSearchActiveRef.current = true;
+          persistGalleryVectorResults(mapped);
+          setDisplayedRegions(mapped);
+          return true;
+        }
+        window.alert('검색 결과가 없습니다. 다른 키워드를 시도해 보세요.');
+        return false;
+      } catch {
+        if (seq === gallerySearchSeqRef.current) {
+          window.alert('네트워크 오류입니다. 백엔드가 실행 중인지 확인해 주세요.');
+        }
+        return false;
+      } finally {
+        if (seq === gallerySearchSeqRef.current) {
+          setGallerySearchBusy(false);
+        }
       }
-    }
-
-    if (uniqueSelected.length >= FEED_SIZE) {
-      setDisplayedRegions(uniqueSelected.slice(0, FEED_SIZE));
-      return;
-    }
-
-    const remaining = regions.filter(item => !selectedIdSet.has(item.id));
-    const fillCount = FEED_SIZE - uniqueSelected.length;
-    const filler = pickFeedItems(remaining, fillCount);
-    setDisplayedRegions([...uniqueSelected, ...filler].slice(0, FEED_SIZE));
-  };
+    },
+    [regionMap],
+  );
 
   const handleToggleScrap = regionId => {
     setScrappedIds(prev => {
@@ -309,9 +480,13 @@ export default function App() {
             <>
               <h1 className="top-title">로컬 바이브</h1>
               <p className="gallery-subtitle">
-                광주·전남의 숨겨진 명소를 AI로 발견해보세요
+                검색어로 Pinecone 벡터 검색만 실행합니다. 대화형 추천은 트립 플래너에서 이용해 주세요.
               </p>
-              <ChatbotPanel onRecommendFeed={handleRecommendFeed} />
+              <GallerySearchBox
+                onSearch={handleGalleryVectorSearch}
+                busy={gallerySearchBusy}
+                placeholder="예: 해수욕장 근처 조용한 곳, 여수 야경 맛집"
+              />
               <RegionGallery
                 regions={displayedRegions.slice(0, FEED_SIZE)}
                 scrappedIds={scrappedIds}
@@ -359,9 +534,16 @@ export default function App() {
       <RegionModal
         region={insightRegion || selectedRegion}
         isLoading={isInsightLoading}
+        apiBaseUrl={API_BASE_URL}
+        crawlImageUrls={modalCrawlImages}
+        article={modalArticle}
+        articleLoading={modalArticleLoading}
         onClose={() => {
           setSelectedRegion(null);
           setInsightRegion(null);
+          setModalCrawlImages([]);
+          setModalArticle(null);
+          setModalArticleLoading(false);
         }}
       />
     </div>

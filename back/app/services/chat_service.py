@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from app.repositories import load_regions
+from app.services import embedding_service
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -681,6 +682,46 @@ def get_chat_result(user_message: str) -> dict:
         return {"answer": answer, "recommendedRegionIds": recommended_ids}
 
 
+def _detect_embedding_filters(user_message: str, rows: list[dict]) -> tuple[Optional[str], Optional[str]]:
+    """Pinecone 메타데이터용 (region_eq, province_eq)."""
+    provinces = sorted(
+        {str(r.get("province") or "").strip() for r in rows if str(r.get("province") or "").strip()},
+        key=len,
+        reverse=True,
+    )
+    for p in provinces:
+        if len(p) >= 2 and p in user_message:
+            return None, p
+    regions = sorted(
+        {str(r.get("region") or "").strip() for r in rows if str(r.get("region") or "").strip()},
+        key=len,
+        reverse=True,
+    )
+    for r in regions:
+        if len(r) >= 2 and r in user_message:
+            return r, None
+    return None, None
+
+
+def _build_trip_spot_context(rows_subset: list[dict]) -> str:
+    lines: list[str] = []
+    for row in rows_subset:
+        try:
+            pid = int(row["id"])
+        except Exception:
+            continue
+        name = row.get("name", "")
+        lat = row.get("latitude")
+        lng = row.get("longitude")
+        types = row.get("recommendedBusinesses") or []
+        type_str = str(types[0]) if types else ""
+        summ = (row.get("summary") or "")[:200]
+        lines.append(
+            f"- id={pid} / 이름={name} / 좌표=({lat}, {lng}) / 유형={type_str} / 설명={summ}"
+        )
+    return "\n".join(lines)
+
+
 def get_trip_chat_result(
     user_message: str,
     trip_duration: dict,
@@ -708,9 +749,28 @@ def get_trip_chat_result(
     if exclude_location_id is not None:
         candidate_limit = max(max_locations + 20, max_locations * 3)
 
-    baseline_ids = _build_recommendation_ids(user_message, rows, candidate_limit)
-    # 현재 로드맵에 이미 있는 것들 제외
-    baseline_ids = [id for id in baseline_ids if id not in current_ids_set]
+    row_by_id = {int(r["id"]): r for r in rows}
+    reg_f, prov_f = _detect_embedding_filters(user_message, rows)
+    baseline_ids: list[int] = []
+    if embedding_service.pinecone_ready():
+        top_k = max(1, days * 10)
+        baseline_ids = embedding_service.search(
+            user_message,
+            region_filter=reg_f,
+            top_k=top_k,
+            province_filter=prov_f,
+        )
+        baseline_ids = [i for i in baseline_ids if i in row_by_id and i not in current_ids_set]
+        if len(baseline_ids) < max(3, max_locations // 2):
+            extra = _build_recommendation_ids(user_message, rows, candidate_limit)
+            for eid in extra:
+                if eid not in baseline_ids and eid not in current_ids_set and eid in row_by_id:
+                    baseline_ids.append(eid)
+                if len(baseline_ids) >= candidate_limit:
+                    break
+    if not baseline_ids:
+        baseline_ids = _build_recommendation_ids(user_message, rows, candidate_limit)
+        baseline_ids = [i for i in baseline_ids if i not in current_ids_set]
 
     recommended_ids = _normalize_trip_recommended_ids(
         baseline_ids,
@@ -728,13 +788,16 @@ def get_trip_chat_result(
         }
 
     client = OpenAI(api_key=api_key)
-    region_context = _build_region_context()
     nights = trip_duration.get("nights", 0)
+    cand_rows = [row_by_id[i] for i in baseline_ids if i in row_by_id][: max(candidate_limit, days * 10)]
+    if not cand_rows:
+        cand_rows = rows[: min(30, len(rows))]
+    trip_ctx = _build_trip_spot_context(cand_rows)
     system_prompt = (
         "당신은 LocalVibe 여행 계획 도우미입니다. "
         f"사용자는 {nights}박 {days}일 여행을 계획 중입니다. "
         f"최대 {max_locations}개 장소를 추천할 수 있습니다. "
-        "질문에 친절하고 구체적으로 답하세요. "
+        "후보 장소의 좌표를 고려해 동선이 효율적인 일정을 제안하고, 각 장소 추천 이유를 설명하세요. "
         "응답은 반드시 json 객체 한 개로만 반환하세요."
     )
 
@@ -748,10 +811,10 @@ def get_trip_chat_result(
                 {
                     "role": "user",
                     "content": (
-                        "데이터 목록:\n"
-                        f"{region_context}\n\n"
-                        "다음 json 형식으로 답하세요: "
-                        f'{{"answer":"...", "recommendedRegionIds":[id1,id2,...,max {max_locations}개]}}\n'
+                        f"사용자가 요청한 여행 조건에 맞춰, 아래 후보 장소들만 사용해 추천하세요.\n"
+                        f"{trip_ctx}\n\n"
+                        f'recommendedRegionIds에는 위 id만 사용하고 최대 {max_locations}개까지 포함하세요. '
+                        f'형식: {{"answer":"...", "recommendedRegionIds":[...]}}\n'
                         f"질문: {user_message}"
                     ),
                 },
@@ -759,7 +822,7 @@ def get_trip_chat_result(
         )
         content = response.choices[0].message.content or ""
         parsed = json.loads(content)
-        _llm_answer = parsed.get("answer") or "추천 장소를 찾았습니다."
+        llm_answer = parsed.get("answer") or ""
         ids = parsed.get("recommendedRegionIds")
         if not isinstance(ids, list):
             ids = []
@@ -773,7 +836,7 @@ def get_trip_chat_result(
             max_locations,
         )
         ids = _reorder_trip_ids_meal_alternating(ids, rows)
-        answer = _trip_answer_from_ids(ids, rows)
+        answer = llm_answer.strip() or _trip_answer_from_ids(ids, rows)
 
         # OpenAI 답변만 그대로 반환 (자동 메시지 X)
         return {"answer": answer, "recommendedRegionIds": ids}

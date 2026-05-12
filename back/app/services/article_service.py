@@ -1,0 +1,154 @@
+"""갤러리 온디맨드 아티클: DOCUMENTS 캐시 + 크롤링 + GPT + 임베딩."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+from typing import Any
+
+from dotenv import load_dotenv
+from openai import OpenAI
+
+from app.repositories import documents_store, places_store, trends_store
+from app.repositories.db import session_scope
+from app.services import embedding_service
+from app.services.naverBlog_crawling import crawl_naver_blog_for_place
+
+load_dotenv()
+logger = logging.getLogger(__name__)
+
+
+def _strip_html(text: str) -> str:
+    return re.sub(r"<[^>]+>", " ", text)
+
+
+def _generate_article_with_gpt(place_name: str, description: str, blog_blob: str) -> tuple[str, str]:
+    api_key = os.getenv("OPEN_API_KEY") or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        title = f"{place_name} 여행 스팟"
+        body = (description or "")[:800]
+        if blog_blob:
+            body = f"{body}\n\n{blog_blob[:1200]}"
+        return title, body[:2000]
+
+    client = OpenAI(api_key=api_key)
+    system = (
+        "당신은 한국 여행 매거진 에디터입니다. "
+        "입력된 공식 설명과 블로그 발췌만 바탕으로 500~1000자 한국어 아티클을 작성하세요. "
+        "과장·확인되지 않은 사실은 쓰지 마세요. JSON으로 title, content 필드를 반환하세요."
+    )
+    user = (
+        f"장소명: {place_name}\n"
+        f"공식/요약 설명:\n{description or '없음'}\n\n"
+        f"블로그 발췌:\n{_strip_html(blog_blob)[:4000]}"
+    )
+    try:
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.4,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        raw = resp.choices[0].message.content or "{}"
+        data = json.loads(raw)
+        title = str(data.get("title") or f"{place_name} 소개").strip()
+        content = str(data.get("content") or "").strip()
+        if not content:
+            return title, description or blog_blob[:1000]
+        return title, content
+    except Exception:
+        logger.exception("[article] GPT 실패 place=%s", place_name)
+        return f"{place_name} 소개", (description or "")[:1000]
+
+
+def get_or_create_article(place_id: int) -> dict[str, Any]:
+    with session_scope() as session:
+        existing = documents_store.get_document_by_place_id(session, place_id)
+        if existing and existing.content:
+            return {
+                "place_id": place_id,
+                "doc_id": existing.doc_id,
+                "title": existing.title or "",
+                "content": existing.content or "",
+                "pinecone_id": existing.pinecone_id,
+                "cached": True,
+            }
+
+        place = places_store.get_place_by_id(session, place_id)
+        if not place:
+            raise ValueError("place not found")
+
+        trends_store.upsert_trend_row(
+            session,
+            place_id=place_id,
+            keyword=place.name or "",
+            crawl_delta=1,
+        )
+
+        pname = place.name or ""
+        pdesc = place.description or ""
+        pcat = place.category
+        preg = place.region
+        pprov = place.province
+
+    region_kw = " ".join(x for x in (preg or "", pprov or "") if x).strip()
+    blog_blob, _serve_urls = crawl_naver_blog_for_place(
+        place_name=pname,
+        place_id=place_id,
+        max_results=int(os.getenv("NAVER_BLOG_MAX_RESULTS", "3")),
+        region=region_kw,
+    )
+
+    title, content = _generate_article_with_gpt(pname, pdesc, blog_blob)
+
+    with session_scope() as session:
+        dup = documents_store.get_document_by_place_id(session, place_id)
+        if dup and dup.content:
+            return {
+                "place_id": place_id,
+                "doc_id": dup.doc_id,
+                "title": dup.title or "",
+                "content": dup.content or "",
+                "pinecone_id": dup.pinecone_id,
+                "cached": True,
+            }
+
+        place = places_store.get_place_by_id(session, place_id)
+        if not place:
+            raise ValueError("place not found")
+
+        doc = documents_store.get_document_by_place_id(session, place_id)
+        if doc:
+            documents_store.update_document_content(session, doc, title=title, content=content)
+            doc_id = doc.doc_id
+        else:
+            doc = documents_store.create_document(session, place_id=place_id, title=title, content=content)
+            doc_id = doc.doc_id
+
+        vec_id = embedding_service.embed_and_upsert(
+            doc_id=doc_id,
+            place_id=place_id,
+            article_text=content,
+            place_name=place.name or "",
+            category=place.category,
+            region=place.region,
+            province=place.province,
+        )
+        if vec_id:
+            documents_store.set_pinecone_id(session, doc_id, vec_id)
+
+        final_doc = documents_store.get_document_by_place_id(session, place_id)
+
+    return {
+        "place_id": place_id,
+        "doc_id": doc_id,
+        "title": title,
+        "content": content,
+        "pinecone_id": (final_doc.pinecone_id if final_doc else vec_id),
+        "cached": False,
+    }

@@ -166,6 +166,68 @@ body {
   font-size: 14px;
 }
 
+.chat-bar-form {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  max-width: 720px;
+  margin: 0 auto 20px;
+}
+
+.chat-bar-form .chat-bar {
+  flex: 1;
+  min-height: 48px;
+  border: 1px solid #d8dde8;
+  border-radius: 12px;
+  padding: 0 16px;
+  font-size: 15px;
+  outline: none;
+}
+
+.chat-bar-submit {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 12px;
+  padding: 0 20px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.chat-bar-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.gallery-search-stack {
+  max-width: 720px;
+  margin: 0 auto 20px;
+}
+
+.gallery-search-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.gallery-history-chip {
+  border: 1px solid #d0d6e2;
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.gallery-history-chip:hover {
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
 .chatbot-panel {
   margin-bottom: 24px;
   border: 1px solid #d9dde5;
@@ -179,6 +241,13 @@ body {
   margin: 0 0 14px;
   font-size: 22px;
   font-weight: 800;
+}
+
+.chatbot-lede {
+  margin: -6px 0 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #5a6270;
 }
 
 .chatbot-messages {
@@ -443,6 +512,51 @@ body {
   margin: 8px 0 12px;
   font-size: 13px;
   color: #5d6575;
+}
+
+.modal-section-title {
+  margin: 18px 0 10px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #1f232b;
+}
+
+.modal-crawl-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.modal-crawl-thumb-wrap {
+  display: block;
+  width: 120px;
+  height: 90px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #e4e7ee;
+}
+
+.modal-crawl-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modal-article-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.modal-article-body {
+  white-space: pre-wrap;
+  line-height: 1.65;
+  font-size: 15px;
+  color: #2b3038;
+  padding: 12px 14px;
+  background: #f6f8fc;
+  border-radius: 12px;
+  border: 1px solid #e6e9f0;
 }
 
 .modal-summary-details {

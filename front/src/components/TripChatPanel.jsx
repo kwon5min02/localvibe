@@ -153,7 +153,6 @@ function parseRemoveIntent(text) {
 /**
  * TripChatPanel Component
  * Specialized chat for Trip Planner - adds/removes locations from roadmap
- * Different from ChatbotPanel which is for gallery recommendations
  *
  * Props:
  *   - onTripLocationsChange: Function called with recommended region IDs

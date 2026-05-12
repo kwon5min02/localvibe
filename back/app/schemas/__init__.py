@@ -1,5 +1,6 @@
 from .auth import GoogleLoginRequest, GoogleLoginResponse, UserProfile
 from .chat import ChatRequest, ChatResponse, TripDuration, TripChatRequest, TripChatResponse
+from .places import GallerySearchItem, GallerySearchResponse, PlaceArticleResponse, PlaceImageItem, PlaceImagesResponse
 from .region import Region, RegionInsight, RegionInsightResponse, RegionListResponse
 
 __all__ = [
@@ -15,4 +16,9 @@ __all__ = [
     "RegionInsight",
     "RegionInsightResponse",
     "RegionListResponse",
+    "PlaceArticleResponse",
+    "PlaceImageItem",
+    "PlaceImagesResponse",
+    "GallerySearchItem",
+    "GallerySearchResponse",
 ]

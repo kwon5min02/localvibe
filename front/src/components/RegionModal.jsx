@@ -70,7 +70,30 @@ function toCardItems(region) {
 
 const MODAL_IMAGE_FALLBACK = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80";
 
-export default function RegionModal({ region, isLoading, onClose }) {
+function resolveMediaUrl(url, apiBaseUrl) {
+  const u = String(url || "").trim();
+  if (!u) {
+    return "";
+  }
+  if (u.startsWith("http://") || u.startsWith("https://")) {
+    return u;
+  }
+  const base = String(apiBaseUrl || "").replace(/\/$/, "");
+  if (u.startsWith("/") && base) {
+    return `${base}${u}`;
+  }
+  return u;
+}
+
+export default function RegionModal({
+  region,
+  isLoading,
+  onClose,
+  apiBaseUrl = "",
+  crawlImageUrls = [],
+  article = null,
+  articleLoading = false,
+}) {
   if (!region) {
     return null;
   }
@@ -87,7 +110,7 @@ export default function RegionModal({ region, isLoading, onClose }) {
           닫기
         </button>
         <img
-          src={region.imageUrl}
+          src={region.imageUrl || MODAL_IMAGE_FALLBACK}
           alt={region.name}
           className="modal-image"
           onError={(event) => {
@@ -110,6 +133,40 @@ export default function RegionModal({ region, isLoading, onClose }) {
           <KakaoMap address={region.address} latitude={region.latitude} longitude={region.longitude} />
         )}
         {isLoading && <p className="modal-loading">상세 데이터를 불러오는 중...</p>}
+        {crawlImageUrls.length > 0 && (
+          <section className="modal-crawl-section" aria-label="크롤링 이미지">
+            <h3 className="modal-section-title">블로그에서 모은 사진</h3>
+            <div className="modal-crawl-gallery">
+              {crawlImageUrls.map((u) => (
+                <a
+                  key={u}
+                  className="modal-crawl-thumb-wrap"
+                  href={resolveMediaUrl(u, apiBaseUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <img
+                    src={resolveMediaUrl(u, apiBaseUrl)}
+                    alt=""
+                    className="modal-crawl-thumb"
+                  />
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
+        {(articleLoading || (article && (article.title || article.content))) && (
+          <section className="modal-article-section" aria-label="AI 아티클">
+            <h3 className="modal-section-title">AI 아티클</h3>
+            {articleLoading && <p className="modal-loading">크롤링 및 아티클 생성 중입니다… (최대 1~2분)</p>}
+            {!articleLoading && article && (
+              <>
+                {article.title ? <h4 className="modal-article-title">{article.title}</h4> : null}
+                <div className="modal-article-body">{article.content || ""}</div>
+              </>
+            )}
+          </section>
+        )}
         <section className="insight-grid">
           {cards.map((card) => (
             <article key={card.title} className="insight-card">
