@@ -4,6 +4,7 @@ from .health import router as health_router
 from .places import router as places_router
 from .regions import router as regions_router
 from .search import router as search_router
+from .visual import router as visual_router
 
 __all__ = [
     "auth_router",
@@ -12,4 +13,5 @@ __all__ = [
     "places_router",
     "regions_router",
     "search_router",
+    "visual_router",
 ]

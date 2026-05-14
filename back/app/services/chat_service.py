@@ -58,6 +58,17 @@ GENERIC_QUERY_TOKENS = {
 LOCALITY_SUFFIXES = ("동", "읍", "면", "리", "구", "시", "군")
 TRIP_ITEMS_PER_DAY = 5
 
+# 자주 쓰는 도 이름 약칭 → DB province 필드 값
+_PROVINCE_TOKEN_TO_CANONICAL: dict[str, str] = {
+    "전남": "전라남도",
+    "전북": "전라북도",
+    "경남": "경상남도",
+    "경북": "경상북도",
+    "충남": "충청남도",
+    "충북": "충청북도",
+    "강원": "강원특별자치도",
+}
+
 # --- 여행 의도 (관계·분위기·이동·기간): GPT + 키워드 폴백 ---
 
 _RELATION_KEYWORDS: dict[str, list[str]] = {
@@ -544,6 +555,16 @@ def _detect_query_regions(
     for alias in alias_universe:
         if alias and alias in query_text:
             matched_regions.add(alias)
+    # "여수" ↔ "여수시" 같이 짧은 지명: 접두어로 연결
+    for token in query_tokens:
+        if len(token) < 2 or token in GENERIC_QUERY_TOKENS:
+            continue
+        for alias in alias_universe:
+            if len(alias) < 2:
+                continue
+            if alias.startswith(token):
+                matched_regions.add(token)
+                break
     return matched_regions
 
 
@@ -629,7 +650,18 @@ def _region_match(row: dict, regions: set[str]) -> bool:
     if not regions:
         return False
     aliases = _row_region_aliases(row)
-    return any(region in aliases for region in regions)
+    str_aliases = {a for a in aliases if isinstance(a, str) and len(a) >= 2}
+    for region in regions:
+        if region in aliases:
+            return True
+        if len(region) < 2:
+            continue
+        for a in str_aliases:
+            if a.startswith(region):
+                return True
+            if len(region) >= 3 and region in a:
+                return True
+    return False
 
 
 def _locality_match(row: dict, locality_tokens: set[str]) -> bool:
@@ -1123,24 +1155,68 @@ def get_chat_result(
 
 
 def _detect_embedding_filters(user_message: str, rows: list[dict]) -> tuple[Optional[str], Optional[str]]:
-    """Pinecone 메타데이터용 (region_eq, province_eq)."""
+    """Pinecone 메타데이터용 (region_eq, province_eq). 값은 DB에 저장된 canonical 문자열."""
+    um = user_message or ""
+    query_tokens = _tokenize(um.lower())
+
+    for t in query_tokens:
+        canon = _PROVINCE_TOKEN_TO_CANONICAL.get(t)
+        if canon and any(str(r.get("province") or "").strip() == canon for r in rows):
+            return None, canon
+
     provinces = sorted(
         {str(r.get("province") or "").strip() for r in rows if str(r.get("province") or "").strip()},
         key=len,
         reverse=True,
     )
     for p in provinces:
-        if len(p) >= 2 and p in user_message:
+        if len(p) >= 2 and p in um:
             return None, p
+    for t in query_tokens:
+        if len(t) < 2:
+            continue
+        for p in provinces:
+            if p.startswith(t) or (len(t) >= 3 and t in p):
+                return None, p
+
     regions = sorted(
         {str(r.get("region") or "").strip() for r in rows if str(r.get("region") or "").strip()},
         key=len,
         reverse=True,
     )
     for r in regions:
-        if len(r) >= 2 and r in user_message:
+        if len(r) >= 2 and r in um:
             return r, None
+    for t in query_tokens:
+        if len(t) < 2:
+            continue
+        for r in regions:
+            if r.startswith(t) or (len(t) >= 3 and t in r):
+                return r, None
     return None, None
+
+
+def _trip_row_matches_geo_filter(
+    row: dict, reg_f: Optional[str], prov_f: Optional[str]
+) -> bool:
+    """Pinecone/토큰으로 고른 행정구역 필터와 행이 일치하는지."""
+    if prov_f:
+        if str(row.get("province") or "").strip() != prov_f:
+            return False
+    if reg_f:
+        rr = str(row.get("region") or "").strip()
+        if rr == reg_f:
+            return True
+        blob = " ".join(
+            [
+                rr,
+                str(row.get("address") or ""),
+                str(row.get("name") or ""),
+                str(row.get("summary") or "")[:80],
+            ]
+        )
+        return reg_f in blob
+    return True
 
 
 def _build_trip_spot_context(rows_subset: list[dict]) -> str:
@@ -1217,6 +1293,15 @@ def get_trip_chat_result(
         )
         baseline_ids = [i for i in baseline_ids if i not in current_ids_set]
 
+    if reg_f or prov_f:
+        geo_ids = [
+            i
+            for i in baseline_ids
+            if i in row_by_id and _trip_row_matches_geo_filter(row_by_id[i], reg_f, prov_f)
+        ]
+        if geo_ids:
+            baseline_ids = geo_ids
+
     recommended_ids = _normalize_trip_recommended_ids(
         baseline_ids,
         valid_region_ids,
@@ -1243,13 +1328,26 @@ def get_trip_chat_result(
         + f" 사용자는 {nights}박 {days}일 여행을 계획 중입니다. "
         f"최대 {max_locations}개 장소를 추천할 수 있습니다. "
         "후보 장소의 좌표를 고려해 동선이 효율적인 일정을 제안하고, 각 장소 추천 이유를 설명하세요. "
-        "응답은 반드시 json 객체 한 개로만 반환하세요."
     )
+    if prov_f:
+        system_prompt += f"반드시 행정구역이 '{prov_f}'인 장소만 선택하세요. 다른 시·도는 제외합니다. "
+    if reg_f:
+        system_prompt += f"시·군·구는 '{reg_f}'와 일치하는 장소만 선택하세요. 지명이 어긋나면 후보에 있어도 넣지 마세요. "
+    system_prompt += "응답은 반드시 json 객체 한 개로만 반환하세요."
     intent_context = _build_intent_context_lines(intent)
     user_atmosphere_hint = (
         "[중요] 후보의 ‘설명’을 읽고 분위기·감성·동행 맥락이 사용자 조건과 맞는 id를 고르세요. "
         "이름만 보고 고르지 마세요.\n\n"
     )
+    n_on_map = len(current_location_ids or [])
+    roadmap_cap_note = ""
+    if n_on_map >= max_locations:
+        roadmap_cap_note = (
+            "\n[상태] 지금 로드맵에 이미 최대 개수에 가깝거나 찼습니다. "
+            "사용자가 동행(친구·연인 등)·분위기·짧은 한마디만 하는 경우에는 answer로만 먼저 반응하고, "
+            "recommendedRegionIds는 빈 배열 [] 로 두거나 새 id를 넣지 마세요. "
+            "장소 추가·교체·기간 연장을 명시했을 때만 id를 채우세요.\n"
+        )
 
     try:
         response = client.chat.completions.create(
@@ -1265,6 +1363,7 @@ def get_trip_chat_result(
                         f"{trip_ctx}\n\n"
                         f"{user_atmosphere_hint}"
                         + (f"사용자 조건:\n{intent_context}\n\n" if intent_context.strip() else "")
+                        + roadmap_cap_note
                         + f"recommendedRegionIds에는 위 id만 사용하고 최대 {max_locations}개까지 포함하세요. "
                         f'형식: {{"answer":"...", "recommendedRegionIds":[...]}}\n'
                         f"질문: {user_message}"
@@ -1280,6 +1379,12 @@ def get_trip_chat_result(
             ids = []
         # 현재 로드맵에 이미 있는 것들 제외
         ids = [id for id in ids if id not in current_ids_set]
+        if reg_f or prov_f:
+            ids = [
+                id
+                for id in ids
+                if id in row_by_id and _trip_row_matches_geo_filter(row_by_id[id], reg_f, prov_f)
+            ]
 
         ids = _normalize_trip_recommended_ids(
             ids,
