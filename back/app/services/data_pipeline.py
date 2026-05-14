@@ -1,6 +1,13 @@
 """
-KTO 등 수집 → 정제 → MySQL PLACES 저장.
-서버 startup에 연결하지 않음. 수동: python -m app.services.data_pipeline (back 디렉터리에서 PYTHONPATH=.)
+KTO 등 수집 → 정제 → MySQL PLACES 저장 (배치 전용).
+API 서버 요청 경로와 분리: 운영 시 `LV_REGIONS_SKIP_EXTERNAL_FETCH=1` 로 런타임 KTO 수집을 끄고,
+주기적으로 본 모듈 또는 `scripts/sync_kto_places.py` 로 DB를 채운 뒤, 이미지는
+`GET /api/regions/{id}/kto-images` 로 온디맨드 조회합니다.
+
+실행: cd back && PYTHONPATH=. python -m app.services.data_pipeline
+
+동일 적재 후 검색 인덱스까지 한 번에: `PYTHONPATH=. python scripts/sync_kto_places.py`
+(MySQL만 할 때는 `sync_kto_places.py --db-only`)
 """
 
 from __future__ import annotations
@@ -73,7 +80,7 @@ def fetch_kto_places(area_codes: list[str] | None = None) -> list[dict]:
 def clean_place(raw: dict[str, Any]) -> dict[str, Any] | None:
     """
     regions_repository 정규화 dict → PLACES 컬럼 dict.
-    이미지 URL 필드는 저장하지 않음.
+    KTO 대표 이미지 URL은 insight_json(ktoImageUrl)로만 저장합니다.
     """
     name = re.sub(r"\s+", " ", str(raw.get("name", "")).strip())
     if not name:
@@ -105,8 +112,11 @@ def clean_place(raw: dict[str, Any]) -> dict[str, Any] | None:
     lat_f = float(lat) if lat is not None and str(lat).strip() != "" else None
     lng_f = float(lng) if lng is not None and str(lng).strip() != "" else None
 
+    kto_img = places_store._normalize_https_image_url(raw.get("imageUrl"))
+
     return {
         "content_id": content_id,
+        "content_type_id": ctype or None,
         "name": name,
         "category": category,
         "region": region,
@@ -116,6 +126,7 @@ def clean_place(raw: dict[str, Any]) -> dict[str, Any] | None:
         "longitude": lng_f,
         "description": description,
         "source": source,
+        "kto_image_url": kto_img or None,
     }
 
 

@@ -5,6 +5,10 @@ from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
     message: str
+    relation: Optional[str] = None
+    mood: Optional[str] = None
+    transport: Optional[str] = None
+    duration: Optional[int] = None
 
 
 class ChatResponse(BaseModel):

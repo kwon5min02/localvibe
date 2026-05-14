@@ -1,9 +1,11 @@
 from fastapi import HTTPException
 
-from app.repositories import get_region_by_id, load_regions
+from app.repositories import get_region_by_id, load_regions, places_store
+from app.repositories.db import session_scope
 from app.repositories.regions_store import update_region_coordinates_in_db, update_region_summary_short_in_db
 from app.schemas import Region, RegionInsight
 from app.services.geocode_service import geocode_address_with_kakao
+from app.services.kto_image_service import fetch_detail_image_urls
 from app.services.summary_service import summarize_korean_text
 
 
@@ -84,6 +86,7 @@ def list_regions() -> list[Region]:
             province=row.get("province"),
             sourceId=row.get("sourceId"),
             dataSource=row.get("dataSource"),
+            contentTypeId=row.get("contentTypeId"),
         )
         for row in region_rows
     ]
@@ -119,3 +122,12 @@ def get_region_insight(region_id: int) -> RegionInsight:
                 pass
 
     return RegionInsight(**enriched)
+
+
+def list_region_kto_image_urls(region_id: int) -> list[str]:
+    """DB의 content_id(+contentTypeId)로 KTO detailImage2 호출. URL은 DB에 저장하지 않음."""
+    with session_scope() as session:
+        cid, ctype = places_store.get_kto_image_ids_for_place(session, region_id)
+    if not cid:
+        raise HTTPException(status_code=404, detail="Region not found or missing KTO content id")
+    return fetch_detail_image_urls(cid, ctype or None)

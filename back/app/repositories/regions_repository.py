@@ -46,6 +46,13 @@ _runtime_cache: dict[str, object] = {
     "cooldown_until": 0.0,
 }
 _external_fetch_lock = threading.Lock()
+
+
+def _regions_skip_external_fetch() -> bool:
+    """1이면 요청 처리 중 KTO/JN 원격 수집·외부 디스크 캐시 갱신을 하지 않고 DB(또는 로컬 JSON)만 사용."""
+    return os.getenv("LV_REGIONS_SKIP_EXTERNAL_FETCH", "").strip() == "1"
+
+
 FALLBACK_IMAGE_POOL = [
     "https://images.unsplash.com/photo-1445116572660-236099ec97a0?auto=format&fit=crop&w=900&q=80",
     "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80",
@@ -1603,6 +1610,7 @@ def load_regions() -> list[dict]:
             os.getenv("JN_COASTAL_ENABLE", ""),
             os.getenv("JN_COASTAL_ENDPOINT_URL", ""),
             os.getenv("JN_COASTAL_MAX_ITEMS", ""),
+            os.getenv("LV_REGIONS_SKIP_EXTERNAL_FETCH", ""),
         ]
     )
     cached = _runtime_cache.get("regions")
@@ -1615,6 +1623,26 @@ def load_regions() -> list[dict]:
         return cached  # type: ignore[return-value]
 
     fallback_regions = load_local_regions()
+
+    if _regions_skip_external_fetch():
+        if db_rows:
+            logger.info("[LEPORTS] LV_REGIONS_SKIP_EXTERNAL_FETCH=1 -> DB rows count=%d", len(db_rows))
+            _runtime_cache["regions"] = db_rows
+            _runtime_cache["loaded_at"] = now
+            _runtime_cache["signature"] = signature
+            _runtime_cache["id_index"] = _build_id_index(db_rows)
+            return db_rows
+        logger.info(
+            "[LEPORTS] LV_REGIONS_SKIP_EXTERNAL_FETCH=1 & DB empty -> local json count=%d",
+            len(fallback_regions),
+        )
+        upsert_regions_to_db(fallback_regions)
+        _runtime_cache["regions"] = fallback_regions
+        _runtime_cache["loaded_at"] = now
+        _runtime_cache["signature"] = signature
+        _runtime_cache["id_index"] = _build_id_index(fallback_regions)
+        return fallback_regions
+
     jn_service_key = os.getenv("JN_LEPORTS_SERVICE_KEY", "").strip()
     kto_service_key = os.getenv("KTO_SERVICE_KEY", "").strip()
 

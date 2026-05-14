@@ -9,6 +9,8 @@ MySQL `places` 테이블 전체를 읽어 Pinecone에 `place_{place_id}` 벡터�
 
   # 처음 50개만 테스트
   cd back && PYTHONPATH=. python scripts/embed_places_to_pinecone.py --limit 50
+
+일반 운영에서는 `scripts/sync_kto_places.py` 가 KTO 적재 후 같은 작업을 이어서 수행합니다.
 """
 
 from __future__ import annotations
@@ -27,12 +29,11 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger("embed_places")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="PLACES → Pinecone bootstrap upsert")
-    parser.add_argument("--limit", type=int, default=0, help="처리할 최대 행 수 (0이면 전체)")
-    parser.add_argument("--interval", type=float, default=0.05, help="upsert 간 간격(초)")
-    args = parser.parse_args()
-
+def run_embed_places_to_pinecone(*, limit: int = 0, interval: float = 0.05) -> int:
+    """
+    MySQL places → Pinecone upsert. 성공 0, 설정 오류 1.
+    `sync_kto_places.py` 등에서 재사용합니다.
+    """
     from dotenv import load_dotenv
 
     load_dotenv(BACK / ".env")
@@ -43,14 +44,13 @@ def main() -> None:
 
     if not mysql_url_configured():
         logger.error("MYSQL_URL 이 설정되지 않았습니다.")
-        sys.exit(1)
+        return 1
     if not embedding_service.pinecone_ready():
         logger.error("Pinecone 을 사용할 수 없습니다. PINECONE_API_KEY, PINECONE_INDEX 를 확인하세요.")
-        sys.exit(1)
+        return 1
 
     with session_scope() as session:
         places = places_store.list_all_places(session)
-        # 세션 밖에서 ORM 객체를 쓰면 DetachedInstanceError → 값만 복사
         rows = [
             {
                 "place_id": int(p.place_id),
@@ -64,8 +64,8 @@ def main() -> None:
             for p in places
         ]
 
-    if args.limit and args.limit > 0:
-        rows = rows[: args.limit]
+    if limit and limit > 0:
+        rows = rows[:limit]
 
     ok, skip, fail = 0, 0, 0
     for i, r in enumerate(rows, 1):
@@ -93,9 +93,19 @@ def main() -> None:
             fail += 1
         if i % 50 == 0:
             logger.info("진행 %s / %s (ok=%s skip=%s fail=%s)", i, len(rows), ok, skip, fail)
-        time.sleep(max(0.0, args.interval))
+        time.sleep(max(0.0, interval))
 
     logger.info("완료: 총 %s건 → ok=%s skip(빈텍스트)=%s fail=%s", len(rows), ok, skip, fail)
+    return 0
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="PLACES → Pinecone bootstrap upsert")
+    parser.add_argument("--limit", type=int, default=0, help="처리할 최대 행 수 (0이면 전체)")
+    parser.add_argument("--interval", type=float, default=0.05, help="upsert 간 간격(초)")
+    args = parser.parse_args()
+
+    sys.exit(run_embed_places_to_pinecone(limit=args.limit, interval=args.interval))
 
 
 if __name__ == "__main__":

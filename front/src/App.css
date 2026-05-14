@@ -81,20 +81,43 @@ body {
 }
 
 .app-layout {
-  display: grid;
-  grid-template-columns: 204px minmax(0, 1fr);
-  gap: 0;
+  display: flex;
+  align-items: stretch;
   width: 100%;
   max-width: none;
   margin: 0;
   padding: 0;
 }
 
+.app-sidebar-resizer {
+  flex-shrink: 0;
+  width: 6px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-left: 1px solid #e0e3e9;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+  z-index: 5;
+  align-self: stretch;
+}
+
+.app-sidebar-resizer:hover,
+.app-sidebar-resizer:focus-visible {
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.app-sidebar-resizer:focus {
+  outline: none;
+}
+
 .app-sidebar {
   margin-top: 0;
   margin-left: 0;
   background: #f4f5f7;
-  border-right: 1px solid #e0e3e9;
+  border-right: none;
   border-top: 0;
   border-bottom: 0;
   border-left: 0;
@@ -104,6 +127,9 @@ body {
   position: sticky;
   top: 64px;
   box-shadow: none;
+  flex-shrink: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .sidebar-section-title {
@@ -147,6 +173,8 @@ body {
 }
 
 .app-shell {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   max-width: 1320px;
   margin: 0 auto;

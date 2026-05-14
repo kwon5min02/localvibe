@@ -52,6 +52,41 @@ class CrawledImage(Base):
     place: Mapped[Place] = relationship("Place", back_populates="crawled_images")
 
 
+def _normalize_https_image_url(raw: object) -> str:
+    v = str(raw or "").strip()
+    if not v:
+        return ""
+    if v.startswith("http://"):
+        v = "https://" + v[len("http://") :]
+    if not v.startswith("https://"):
+        return ""
+    return v
+
+
+def _kto_image_url_from_insight(insight_json: str | None) -> str:
+    if not insight_json:
+        return ""
+    try:
+        data = json.loads(insight_json)
+        if isinstance(data, dict):
+            return _normalize_https_image_url(data.get("ktoImageUrl"))
+    except Exception:
+        pass
+    return ""
+
+
+def _content_type_id_from_insight(insight_json: str | None) -> str:
+    if not insight_json:
+        return ""
+    try:
+        data = json.loads(insight_json)
+        if isinstance(data, dict):
+            return str(data.get("contentTypeId") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
 def _deserialize_insight(insight_json: str | None) -> tuple[list[str], list[str], list[str]]:
     if not insight_json:
         return [], [], []
@@ -81,6 +116,9 @@ def place_to_region_dict(
     if not rec and place.category:
         rec = [place.category]
     ss = summary_short if summary_short is not None else get_summary_short_from_insight(place.insight_json)
+    ctid = _content_type_id_from_insight(place.insight_json)
+    kto_img = _kto_image_url_from_insight(place.insight_json)
+    display_img = (primary_image_url or "").strip() or kto_img
     return {
         "id": int(place.place_id),
         "sourceId": place.content_id or "",
@@ -90,13 +128,14 @@ def place_to_region_dict(
         "address": place.address or "",
         "latitude": place.latitude,
         "longitude": place.longitude,
-        "imageUrl": primary_image_url or "",
+        "imageUrl": display_img or "",
         "summary": place.description or "",
         "summaryShort": ss or None,
         "recommendedBusinesses": rec,
         "busyHours": busy,
         "targetCustomers": targets,
         "dataSource": place.source,
+        "contentTypeId": ctid or None,
     }
 
 
@@ -168,6 +207,8 @@ def upsert_place_from_legacy_row(session, row: dict[str, Any]) -> Place:
         "recommendedBusinesses": row.get("recommendedBusinesses") or [],
         "busyHours": row.get("busyHours") or [],
         "targetCustomers": row.get("targetCustomers") or [],
+        "contentTypeId": str(row.get("contentTypeId") or "").strip(),
+        "ktoImageUrl": _normalize_https_image_url(row.get("imageUrl")),
     }
     insight_json = json.dumps(insight, ensure_ascii=False)
 
@@ -203,7 +244,22 @@ def upsert_place_from_legacy_row(session, row: dict[str, Any]) -> Place:
             existing.longitude = lng_f
         existing.description = description or existing.description
         existing.source = source or existing.source
-        existing.insight_json = insight_json
+        try:
+            prev = json.loads(existing.insight_json) if existing.insight_json else {}
+            if not isinstance(prev, dict):
+                prev = {}
+        except Exception:
+            prev = {}
+        ni = _normalize_https_image_url(row.get("imageUrl"))
+        merged_kto = ni or _normalize_https_image_url(prev.get("ktoImageUrl"))
+        merged = {
+            "recommendedBusinesses": row.get("recommendedBusinesses") or prev.get("recommendedBusinesses") or [],
+            "busyHours": row.get("busyHours") or prev.get("busyHours") or [],
+            "targetCustomers": row.get("targetCustomers") or prev.get("targetCustomers") or [],
+            "contentTypeId": str(row.get("contentTypeId") or prev.get("contentTypeId") or "").strip(),
+            "ktoImageUrl": merged_kto,
+        }
+        existing.insight_json = json.dumps(merged, ensure_ascii=False)
         existing.created_at = existing.created_at or now
         session.flush()
         return existing
@@ -240,6 +296,30 @@ def upsert_place_from_legacy_row(session, row: dict[str, Any]) -> Place:
     return place
 
 
+def _merge_pipeline_insight(
+    existing_json: str | None,
+    content_type_id: str | None,
+    kto_image_url: str | None = None,
+) -> str:
+    base: dict[str, Any] = {
+        "recommendedBusinesses": [],
+        "busyHours": [],
+        "targetCustomers": [],
+    }
+    if existing_json:
+        try:
+            d = json.loads(existing_json)
+            if isinstance(d, dict):
+                base.update(d)
+        except Exception:
+            pass
+    if content_type_id:
+        base["contentTypeId"] = content_type_id
+    if kto_image_url:
+        base["ktoImageUrl"] = kto_image_url
+    return json.dumps(base, ensure_ascii=False)
+
+
 def upsert_place_from_pipeline_dict(session, data: dict[str, Any]) -> Place:
     """data_pipeline clean 출력: content_id, name, category, region, province, address, latitude, longitude, description, source."""
     content_id = data.get("content_id")
@@ -261,9 +341,20 @@ def upsert_place_from_pipeline_dict(session, data: dict[str, Any]) -> Place:
             existing.longitude = float(data["longitude"])
         existing.description = data.get("description") or existing.description
         existing.source = data.get("source") or existing.source
+        ct_raw = data.get("content_type_id")
+        if ct_raw is None:
+            ct_raw = data.get("contentTypeId")
+        ct_val = str(ct_raw).strip() if ct_raw is not None else ""
+        img_val = _normalize_https_image_url(data.get("kto_image_url") or data.get("ktoImageUrl"))
+        existing.insight_json = _merge_pipeline_insight(
+            existing.insight_json,
+            ct_val if ct_val else None,
+            img_val if img_val else None,
+        )
         session.flush()
         return existing
 
+    img_new = _normalize_https_image_url(data.get("kto_image_url") or data.get("ktoImageUrl"))
     place = Place(
         content_id=content_id,
         name=name or "(이름없음)",
@@ -276,11 +367,25 @@ def upsert_place_from_pipeline_dict(session, data: dict[str, Any]) -> Place:
         description=data.get("description"),
         source=data.get("source"),
         created_at=now,
-        insight_json=None,
+        insight_json=_merge_pipeline_insight(
+            None,
+            str(data.get("content_type_id") or data.get("contentTypeId") or "").strip() or None,
+            img_new if img_new else None,
+        ),
     )
     session.add(place)
     session.flush()
     return place
+
+
+def get_kto_image_ids_for_place(session, place_id: int) -> tuple[str, str]:
+    """(content_id, content_type_id) — KTO detailImage2 온디맨드용. 없으면 빈 문자열."""
+    p = get_place_by_id(session, place_id)
+    if not p:
+        return "", ""
+    cid = (p.content_id or "").strip()
+    ct = _content_type_id_from_insight(p.insight_json)
+    return cid, ct
 
 
 def update_summary_short(session, place_id: int, summary_short: str) -> None:

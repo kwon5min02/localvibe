@@ -61,7 +61,7 @@ def get_place_images(place_id: int):
         if not p:
             raise HTTPException(status_code=404, detail="Place not found")
         rows = places_store.list_crawled_images_for_place(session, place_id)
-    urls = [r.serve_url for r in rows if r.serve_url]
+        urls = [str(r.serve_url).strip() for r in rows if r.serve_url]
     return PlaceImagesResponse(
         place_id=place_id,
         images=[PlaceImageItem(url=u) for u in urls],

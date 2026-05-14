@@ -12,6 +12,26 @@ const API_BASE_URL =
 const FEED_SIZE = 9;
 const GALLERY_VECTOR_ACTIVE_KEY = 'lv_gallery_vector_active';
 const GALLERY_SEARCH_RESULTS_KEY = 'lv_gallery_search_results';
+const SIDEBAR_WIDTH_KEY = 'lv_sidebar_width';
+const SIDEBAR_WIDTH_DEFAULT = 204;
+const SIDEBAR_WIDTH_MIN = 168;
+const SIDEBAR_WIDTH_MAX = 420;
+
+function readInitialSidebarWidth() {
+  if (typeof localStorage === 'undefined') {
+    return SIDEBAR_WIDTH_DEFAULT;
+  }
+  try {
+    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    const n = raw != null ? Number(raw) : NaN;
+    if (!Number.isFinite(n)) {
+      return SIDEBAR_WIDTH_DEFAULT;
+    }
+    return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(n)));
+  } catch {
+    return SIDEBAR_WIDTH_DEFAULT;
+  }
+}
 
 function isGalleryVectorFeedLocked() {
   if (typeof sessionStorage === 'undefined') {
@@ -193,6 +213,7 @@ export default function App() {
   const [modalArticle, setModalArticle] = useState(null);
   const [modalArticleLoading, setModalArticleLoading] = useState(false);
   const [gallerySearchBusy, setGallerySearchBusy] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(readInitialSidebarWidth);
   /** 갤러리 벡터 검색으로 `displayedRegions`를 채운 뒤에는 초기 `/api/regions` 응답이 늦게 도착해도 덮어쓰지 않습니다. */
   const galleryVectorSearchActiveRef = useRef(isGalleryVectorFeedLocked());
   /** 가장 최근에 시작한 검색만 결과를 반영합니다(늦게 도착한 이전 요청 무시). */
@@ -335,9 +356,85 @@ export default function App() {
     };
   }, [selectedRegion?.id]);
 
+  const handleSidebarResizePointerDown = useCallback(
+    e => {
+      if (e.button !== 0) {
+        return;
+      }
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = sidebarWidth;
+      let lastW = startW;
+
+      const onMove = ev => {
+        const dx = ev.clientX - startX;
+        lastW = Math.min(
+          SIDEBAR_WIDTH_MAX,
+          Math.max(SIDEBAR_WIDTH_MIN, Math.round(startW + dx)),
+        );
+        setSidebarWidth(lastW);
+      };
+
+      const end = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        try {
+          localStorage.setItem(SIDEBAR_WIDTH_KEY, String(lastW));
+        } catch {
+          // storage full / private mode
+        }
+      };
+
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // 일부 브라우저에서 캡처 실패해도 window 리스너로 동작합니다.
+      }
+    },
+    [sidebarWidth],
+  );
+
   const regionMap = useMemo(() => {
     return new Map(regions.map(region => [region.id, region]));
   }, [regions]);
+
+  /** 검색 직후에는 `displayedRegions`에 imageUrl이 비어 있을 수 있음. `/api/regions` 갱신 후 regionMap과 다시 합칩니다. */
+  const galleryDisplayRegions = useMemo(() => {
+    return displayedRegions.map(r => {
+      const id = Number(r?.id);
+      if (!Number.isFinite(id)) {
+        return r;
+      }
+      const base = regionMap.get(id);
+      if (!base) {
+        return r;
+      }
+      const mergedSummary =
+        r.summary && String(r.summary).trim() && r.summary !== '상세 설명이 없습니다.'
+          ? r.summary
+          : base.summary || r.summary;
+      return {
+        ...r,
+        imageUrl: base.imageUrl || r.imageUrl || '',
+        summary: mergedSummary,
+        address: r.address || base.address,
+        latitude: r.latitude ?? base.latitude,
+        longitude: r.longitude ?? base.longitude,
+        province: r.province || base.province,
+        sourceId: r.sourceId || base.sourceId,
+        dataSource: r.dataSource || base.dataSource,
+        contentTypeId: r.contentTypeId ?? base.contentTypeId,
+      };
+    });
+  }, [displayedRegions, regionMap]);
 
   const handleGalleryVectorSearch = useCallback(
     async (q) => {
@@ -446,7 +543,7 @@ export default function App() {
         onLogout={handleLogout}
       />
       <div className="app-layout">
-        <aside className="app-sidebar">
+        <aside className="app-sidebar" style={{ width: sidebarWidth }}>
           <div className="sidebar-section-title">메인</div>
           {SIDEBAR_MENU.filter(item => item.section === '메인').map(item => (
             <button
@@ -474,6 +571,15 @@ export default function App() {
           ))}
         </aside>
 
+        <div
+          className="app-sidebar-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="사이드바 너비 조절"
+          tabIndex={0}
+          onPointerDown={handleSidebarResizePointerDown}
+        />
+
         <main className="app-shell">
           {/* Conditional Content */}
           {activeTab === 'gallery' ? (
@@ -488,7 +594,7 @@ export default function App() {
                 placeholder="예: 해수욕장 근처 조용한 곳, 여수 야경 맛집"
               />
               <RegionGallery
-                regions={displayedRegions.slice(0, FEED_SIZE)}
+                regions={galleryDisplayRegions.slice(0, FEED_SIZE)}
                 scrappedIds={scrappedIds}
                 onToggleScrap={handleToggleScrap}
                 onSelect={region => {
