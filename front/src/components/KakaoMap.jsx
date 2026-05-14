@@ -18,14 +18,14 @@ function buildKakaoMapUrl(address, latitude, longitude) {
   return `https://map.kakao.com/link/search/${encodeURIComponent(address)}`;
 }
 
-function createSdkUrl(withServices = false) {
-  const libs = withServices ? "&libraries=services" : "";
-  return `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false${libs}`;
+/** 서비스(지오코더) 포함 — 좌표 없을 때 주소로 지도 표시 */
+function createSdkUrl() {
+  return `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false&libraries=services`;
 }
 
 function loadKakaoSdk() {
   return new Promise((resolve, reject) => {
-    if (window.kakao?.maps?.load) {
+    if (window.kakao?.maps?.load && window.kakao?.maps?.services?.Geocoder) {
       window.kakao.maps.load(() => resolve(window.kakao));
       return;
     }
@@ -34,7 +34,23 @@ function loadKakaoSdk() {
       return;
     }
 
-    const mountScript = (src, removeExisting = false) =>
+    if (
+      document.getElementById(KAKAO_SCRIPT_ID) &&
+      window.kakao?.maps?.load &&
+      !window.kakao?.maps?.services?.Geocoder
+    ) {
+      const stale = document.getElementById(KAKAO_SCRIPT_ID);
+      if (stale) {
+        stale.remove();
+      }
+      try {
+        delete window.kakao;
+      } catch (_) {
+        window.kakao = undefined;
+      }
+    }
+
+    const mountScript = (removeExisting = false) =>
       new Promise((innerResolve, innerReject) => {
         if (removeExisting) {
           const stale = document.getElementById(KAKAO_SCRIPT_ID);
@@ -53,17 +69,16 @@ function loadKakaoSdk() {
         const script = document.createElement("script");
         script.id = KAKAO_SCRIPT_ID;
         script.async = true;
-        script.src = `${src}&_ts=${Date.now()}`;
+        script.src = `${createSdkUrl()}&_ts=${Date.now()}`;
         script.onload = () => innerResolve(window.kakao);
         script.onerror = () => innerReject(new Error("sdk_blocked"));
         document.head.appendChild(script);
       });
 
-    // Keep timeout short so fallback map appears quickly.
-    const timeout = setTimeout(() => reject(new Error("sdk_timeout")), 2500);
+    const timeout = setTimeout(() => reject(new Error("sdk_timeout")), 8000);
 
-    mountScript(createSdkUrl(false), false)
-      .catch(() => mountScript(createSdkUrl(false), true))
+    mountScript(false)
+      .catch(() => mountScript(true))
       .then(() => {
         if (!window.kakao?.maps?.load) {
           throw new Error("sdk_blocked");
@@ -81,18 +96,20 @@ export default function KakaoMap({ address, latitude, longitude }) {
   const mapCenterRef = useRef(null);
   const [error, setError] = useState("");
   const mapUrl = buildKakaoMapUrl(address, latitude, longitude);
+  const addr = String(address || "").trim();
 
   useEffect(() => {
     let active = true;
 
-    if (!hasValidCoord(latitude, longitude)) {
-      setError("좌표 정보가 없어 지도를 표시할 수 없습니다.");
+    if (!KAKAO_JS_KEY) {
+      setError("카카오 JavaScript 키가 설정되지 않았습니다.");
       return () => {
         active = false;
       };
     }
-    if (!KAKAO_JS_KEY) {
-      setError("카카오 JavaScript 키가 설정되지 않았습니다.");
+
+    if (!hasValidCoord(latitude, longitude) && !addr) {
+      setError("좌표나 주소가 없어 지도를 표시할 수 없습니다.");
       return () => {
         active = false;
       };
@@ -105,22 +122,48 @@ export default function KakaoMap({ address, latitude, longitude }) {
         if (!active || !mapRef.current) {
           return;
         }
-        const coords = new kakao.maps.LatLng(Number(latitude), Number(longitude));
-        mapRef.current.innerHTML = "";
-        const map = new kakao.maps.Map(mapRef.current, { center: coords, level: 4 });
-        const markerImage = new kakao.maps.MarkerImage(MARKER_IMAGE_URL, new kakao.maps.Size(40, 42));
-        new kakao.maps.Marker({ map, position: coords, image: markerImage });
-        mapInstanceRef.current = map;
-        mapCenterRef.current = coords;
 
-        [0, 180, 420, 800].forEach((delay) => {
-          setTimeout(() => {
-            if (!active || !mapInstanceRef.current || !mapCenterRef.current) {
-              return;
-            }
-            mapInstanceRef.current.relayout();
-            mapInstanceRef.current.setCenter(mapCenterRef.current);
-          }, delay);
+        const paint = (lat, lng) => {
+          if (!active || !mapRef.current) {
+            return;
+          }
+          const coords = new kakao.maps.LatLng(lat, lng);
+          mapRef.current.innerHTML = "";
+          const map = new kakao.maps.Map(mapRef.current, { center: coords, level: 4 });
+          const markerImage = new kakao.maps.MarkerImage(
+            MARKER_IMAGE_URL,
+            new kakao.maps.Size(40, 42),
+          );
+          new kakao.maps.Marker({ map, position: coords, image: markerImage });
+          mapInstanceRef.current = map;
+          mapCenterRef.current = coords;
+
+          [0, 180, 420, 800].forEach((delay) => {
+            setTimeout(() => {
+              if (!active || !mapInstanceRef.current || !mapCenterRef.current) {
+                return;
+              }
+              mapInstanceRef.current.relayout();
+              mapInstanceRef.current.setCenter(mapCenterRef.current);
+            }, delay);
+          });
+        };
+
+        if (hasValidCoord(latitude, longitude)) {
+          paint(Number(latitude), Number(longitude));
+          return;
+        }
+
+        const geocoder = new kakao.maps.services.Geocoder();
+        geocoder.addressSearch(addr, (result, status) => {
+          if (!active) {
+            return;
+          }
+          if (status === kakao.maps.services.Status.OK && result?.[0]) {
+            paint(parseFloat(result[0].y), parseFloat(result[0].x));
+          } else {
+            setError("주소를 지도 위치로 찾지 못했습니다.");
+          }
         });
       })
       .catch((err) => {
@@ -142,7 +185,7 @@ export default function KakaoMap({ address, latitude, longitude }) {
     return () => {
       active = false;
     };
-  }, [latitude, longitude]);
+  }, [latitude, longitude, addr]);
 
   useEffect(() => {
     if (!mapRef.current) {
@@ -170,7 +213,7 @@ export default function KakaoMap({ address, latitude, longitude }) {
   return (
     <section className="kakao-map-wrapper">
       <h3>위치 지도</h3>
-      {address ? <p className="kakao-map-address">{address}</p> : null}
+      {addr ? <p className="kakao-map-address">{addr}</p> : null}
       {error ? (
         <>
           {mapUrl ? (
@@ -186,6 +229,7 @@ export default function KakaoMap({ address, latitude, longitude }) {
           ) : (
             <p className="kakao-map-error">{error}</p>
           )}
+          {mapUrl ? <p className="kakao-map-error kakao-map-error-secondary">{error}</p> : null}
         </>
       ) : (
         <div ref={mapRef} className="kakao-map-canvas" />

@@ -81,20 +81,43 @@ body {
 }
 
 .app-layout {
-  display: grid;
-  grid-template-columns: 204px minmax(0, 1fr);
-  gap: 0;
+  display: flex;
+  align-items: stretch;
   width: 100%;
   max-width: none;
   margin: 0;
   padding: 0;
 }
 
+.app-sidebar-resizer {
+  flex-shrink: 0;
+  width: 6px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-left: 1px solid #e0e3e9;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+  z-index: 5;
+  align-self: stretch;
+}
+
+.app-sidebar-resizer:hover,
+.app-sidebar-resizer:focus-visible {
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.app-sidebar-resizer:focus {
+  outline: none;
+}
+
 .app-sidebar {
   margin-top: 0;
   margin-left: 0;
   background: #f4f5f7;
-  border-right: 1px solid #e0e3e9;
+  border-right: none;
   border-top: 0;
   border-bottom: 0;
   border-left: 0;
@@ -104,6 +127,9 @@ body {
   position: sticky;
   top: 64px;
   box-shadow: none;
+  flex-shrink: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .sidebar-section-title {
@@ -147,6 +173,8 @@ body {
 }
 
 .app-shell {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   max-width: 1320px;
   margin: 0 auto;
@@ -166,6 +194,68 @@ body {
   font-size: 14px;
 }
 
+.chat-bar-form {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  max-width: 720px;
+  margin: 0 auto 20px;
+}
+
+.chat-bar-form .chat-bar {
+  flex: 1;
+  min-height: 48px;
+  border: 1px solid #d8dde8;
+  border-radius: 12px;
+  padding: 0 16px;
+  font-size: 15px;
+  outline: none;
+}
+
+.chat-bar-submit {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 12px;
+  padding: 0 20px;
+  background: #2563eb;
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.chat-bar-submit:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.gallery-search-stack {
+  max-width: 720px;
+  margin: 0 auto 20px;
+}
+
+.gallery-search-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.gallery-history-chip {
+  border: 1px solid #d0d6e2;
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.gallery-history-chip:hover {
+  border-color: #2563eb;
+  color: #1d4ed8;
+}
+
 .chatbot-panel {
   margin-bottom: 24px;
   border: 1px solid #d9dde5;
@@ -179,6 +269,13 @@ body {
   margin: 0 0 14px;
   font-size: 22px;
   font-weight: 800;
+}
+
+.chatbot-lede {
+  margin: -6px 0 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #5a6270;
 }
 
 .chatbot-messages {
@@ -445,6 +542,51 @@ body {
   color: #5d6575;
 }
 
+.modal-section-title {
+  margin: 18px 0 10px;
+  font-size: 17px;
+  font-weight: 800;
+  color: #1f232b;
+}
+
+.modal-crawl-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.modal-crawl-thumb-wrap {
+  display: block;
+  width: 120px;
+  height: 90px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #e4e7ee;
+}
+
+.modal-crawl-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modal-article-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.modal-article-body {
+  white-space: pre-wrap;
+  line-height: 1.65;
+  font-size: 15px;
+  color: #2b3038;
+  padding: 12px 14px;
+  background: #f6f8fc;
+  border-radius: 12px;
+  border: 1px solid #e6e9f0;
+}
+
 .modal-summary-details {
   margin: 8px 0 12px;
 }
@@ -512,6 +654,12 @@ body {
   margin: 0;
   color: #6a7282;
   font-size: 14px;
+}
+
+.kakao-map-error-secondary {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #8b939e;
 }
 
 .kakao-map-link {
@@ -703,6 +851,21 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
+}
+
+.trip-planner-route-map {
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px solid #e2e7f3;
+  border-radius: 14px;
+  background: #fbfcff;
+}
+
+.trip-planner-route-map-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #2d3a52;
 }
 
 .trip-planner-right {
@@ -1134,7 +1297,7 @@ body {
   display: inline-block;
 }
 
-/* ── Generative UI blocks ─────────────────────────── */
+/* ── Trip planner generative UI (visual popup, comparison, gallery, map) ── */
 .copilot-ui-block {
   width: 100%;
   margin-top: 8px;
@@ -1178,7 +1341,7 @@ body {
   width: min(1000px, 95vw);
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.22);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.22);
 }
 
 .visual-popup-close {
@@ -1203,7 +1366,6 @@ body {
   margin: 4px 0;
 }
 
-/* ComparisonTable */
 .comparison-table {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -1267,7 +1429,6 @@ body {
   color: #333;
 }
 
-/* RouteMap */
 .route-map-wrap {
   width: 100%;
 }
@@ -1314,7 +1475,6 @@ body {
   flex-shrink: 0;
 }
 
-/* MultiMarkerMap */
 .multi-marker-map-wrap {
   width: 100%;
 }
@@ -1334,6 +1494,18 @@ body {
   border: 1px solid #e2e5ec;
 }
 
+.multi-marker-map-canvas--placeholder {
+  min-height: 280px;
+  height: 280px;
+  background: linear-gradient(180deg, #f4f6fb 0%, #e8ecf5 100%);
+}
+
+.multi-marker-map-loading {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #5d6575;
+}
+
 .multi-marker-map-error {
   font-size: 13px;
   color: #e05;
@@ -1346,7 +1518,6 @@ body {
   margin: 8px 0 0;
 }
 
-/* ImageGallery */
 .image-gallery {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1379,7 +1550,7 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  background: linear-gradient(transparent, rgba(0,0,0,0.65));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.65));
   color: #fff;
   padding: 6px 6px 4px;
   font-size: 11px;
@@ -1395,11 +1566,10 @@ body {
   white-space: nowrap;
 }
 
-/* Lightbox */
 .lightbox-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.75);
+  background: rgba(0, 0, 0, 0.75);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1441,7 +1611,7 @@ body {
   position: absolute;
   top: 8px;
   right: 8px;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0, 0, 0, 0.4);
   color: #fff;
   border: none;
   border-radius: 50%;
@@ -1452,78 +1622,6 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-/* PlaceInfoCard */
-.place-info-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 100%;
-}
-
-.place-info-card {
-  display: flex;
-  gap: 10px;
-  background: #fff;
-  border-radius: 10px;
-  border: 1px solid #e2e5ec;
-  overflow: hidden;
-}
-
-.place-info-img {
-  width: 90px;
-  height: 90px;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.place-info-body {
-  padding: 10px 10px 10px 0;
-  flex: 1;
-  min-width: 0;
-}
-
-.place-info-name {
-  font-size: 14px;
-  font-weight: 700;
-  margin: 0 0 4px;
-}
-
-.place-info-summary {
-  font-size: 12px;
-  color: #555;
-  margin: 0 0 6px;
-  line-height: 1.4;
-}
-
-.place-info-details {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  font-size: 11px;
-}
-
-.place-info-details li {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 2px;
-}
-
-.detail-label {
-  color: #888;
-  flex-shrink: 0;
-}
-
-.detail-label::after {
-  content: ':';
-}
-
-.detail-value {
-  color: #333;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .trip-chat-form {

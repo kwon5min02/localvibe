@@ -6,4 +6,8 @@ requests
 beautifulsoup4
 google-auth
 python-jose[cryptography]
-copilotkit
+sqlalchemy
+pymysql
+cryptography
+pinecone
+sentence-transformers

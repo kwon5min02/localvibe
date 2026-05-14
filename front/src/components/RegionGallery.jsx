@@ -70,6 +70,7 @@ export default function RegionGallery({ regions, onSelect, scrappedIds = [], onT
                 alt={region.name}
                 className="region-image"
                 loading="lazy"
+                referrerPolicy="no-referrer"
                 onError={(event) => {
                   event.currentTarget.onerror = null;
                   event.currentTarget.src = CARD_IMAGE_FALLBACK;

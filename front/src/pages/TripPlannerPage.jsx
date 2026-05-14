@@ -3,6 +3,7 @@ import RoadMap from '../components/RoadMap';
 import TripChatPanel from '../components/TripChatPanel';
 import RegionModal from '../components/RegionModal';
 import ExportButton from '../components/ExportButton';
+import MultiMarkerMap from '../components/ui/MultiMarkerMap';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -13,6 +14,8 @@ const API_BASE_URL =
  * Shows a dynamic travel itinerary built through AI recommendations
  */
 export default function TripPlannerPage({ regions = [] }) {
+  const chatResetRef = useRef(null);
+
   // Roadmap locations (user's selected trip itinerary)
   const [roadmapLocations, setRoadmapLocations] = useState([]);
   const chatResetRef = useRef(null);
@@ -26,6 +29,27 @@ export default function TripPlannerPage({ regions = [] }) {
   const regionMap = useMemo(() => {
     return new Map(regions.map(region => [region.id, region]));
   }, [regions]);
+
+  /** 모달: 인사이트가 좌표를 비우는 경우에도 로드맵에 있던 주소·좌표 유지 */
+  const modalRegion = useMemo(() => {
+    if (!selectedLocation) {
+      return null;
+    }
+    if (!insightLocation) {
+      return selectedLocation;
+    }
+    return {
+      ...selectedLocation,
+      ...insightLocation,
+      latitude: insightLocation.latitude ?? selectedLocation.latitude,
+      longitude: insightLocation.longitude ?? selectedLocation.longitude,
+      address: insightLocation.address || selectedLocation.address || '',
+      imageUrl: insightLocation.imageUrl || selectedLocation.imageUrl,
+      summary: insightLocation.summary || selectedLocation.summary,
+      summaryShort:
+        insightLocation.summaryShort || selectedLocation.summaryShort,
+    };
+  }, [selectedLocation, insightLocation]);
 
   // Fetch detailed insight for selected location
   useEffect(() => {
@@ -140,6 +164,22 @@ export default function TripPlannerPage({ regions = [] }) {
   };
 
   /**
+   * 전체 재계획(replan): 추천 id 순서대로 로드맵을 통째로 교체
+   */
+  const handleTripLocationsReplaceAll = recommendedIds => {
+    if (!Array.isArray(recommendedIds) || recommendedIds.length === 0) {
+      return;
+    }
+    const next = recommendedIds
+      .map(id => regionMap.get(Number(id)))
+      .filter(region => region !== undefined);
+    if (next.length === 0) {
+      return;
+    }
+    setRoadmapLocations(next);
+  };
+
+  /**
    * Remove a location from the roadmap
    */
   const handleRemoveLocation = locationId => {
@@ -232,6 +272,16 @@ export default function TripPlannerPage({ regions = [] }) {
               />
             )}
 
+            {roadmapLocations.length > 0 && (
+              <section
+                className="trip-planner-route-map"
+                aria-label="일정 전체 지도"
+              >
+                <h3 className="trip-planner-route-map-title">일정 지도</h3>
+                <MultiMarkerMap locations={roadmapLocations} />
+              </section>
+            )}
+
             {/* Export buttons */}
             <ExportButton roadmapLocations={roadmapLocations} />
           </div>
@@ -241,6 +291,7 @@ export default function TripPlannerPage({ regions = [] }) {
         <div className="trip-planner-right">
           <TripChatPanel
             onTripLocationsChange={handleTripLocationsChange}
+            onTripLocationsReplaceAll={handleTripLocationsReplaceAll}
             onReplaceLocation={handleReplaceLocation}
             onRemoveLocation={handleRemoveLocation}
             resolveRegionName={resolveRegionName}
@@ -252,8 +303,9 @@ export default function TripPlannerPage({ regions = [] }) {
 
       {/* Modal for location details */}
       <RegionModal
-        region={insightLocation || selectedLocation}
+        region={modalRegion}
         isLoading={isInsightLoading}
+        apiBaseUrl={API_BASE_URL}
         onClose={() => {
           setSelectedLocation(null);
           setInsightLocation(null);

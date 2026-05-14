@@ -15,9 +15,13 @@ __pycache__/
 back/.venv/
 back/.pycache/
 
+# FastAPI /static 로컬 업로드 (런타임 생성)
+back/static/
+
 # Environment files
 .env
 .env.*
+!**/.env.example
 back/.env
 
 # Cursor / IDE artifacts

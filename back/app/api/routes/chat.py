@@ -8,7 +8,13 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 @router.post("", response_model=ChatResponse)
 def chat(payload: ChatRequest):
-    return get_chat_result(payload.message)
+    return get_chat_result(
+        payload.message,
+        relation=payload.relation,
+        mood=payload.mood,
+        transport=payload.transport,
+        duration=payload.duration,
+    )
 
 
 @router.post("/trip", response_model=TripChatResponse)
@@ -18,4 +24,5 @@ def trip_chat(payload: TripChatRequest):
         {"nights": payload.tripDuration.nights, "days": payload.tripDuration.days},
         payload.currentLocationIds or [],
         payload.excludeLocationId,
+        replan=bool(payload.replan),
     )

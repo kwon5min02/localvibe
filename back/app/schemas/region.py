@@ -15,6 +15,7 @@ class Region(BaseModel):
     province: Optional[str] = None
     sourceId: Optional[str] = None
     dataSource: Optional[str] = None
+    contentTypeId: Optional[str] = None
 
 
 class RegionInsight(Region):
@@ -29,3 +30,7 @@ class RegionListResponse(BaseModel):
 
 class RegionInsightResponse(BaseModel):
     region: RegionInsight
+
+
+class RegionKtoImagesResponse(BaseModel):
+    urls: list[str]
