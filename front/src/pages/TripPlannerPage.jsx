@@ -14,8 +14,6 @@ const API_BASE_URL =
  * Shows a dynamic travel itinerary built through AI recommendations
  */
 export default function TripPlannerPage({ regions = [] }) {
-  const chatResetRef = useRef(null);
-
   // Roadmap locations (user's selected trip itinerary)
   const [roadmapLocations, setRoadmapLocations] = useState([]);
   const chatResetRef = useRef(null);
