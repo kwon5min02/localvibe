@@ -69,6 +69,64 @@ _PROVINCE_TOKEN_TO_CANONICAL: dict[str, str] = {
     "강원": "강원특별자치도",
 }
 
+# 시·군·익명 지명 → DB `province` 필드 (VisitKorea PLACES에 시군구 대신 도 단위만 있는 행이 많음)
+_CITY_TOKEN_TO_PROVINCE: dict[str, str] = {
+    "서울": "서울특별시",
+    "인천": "인천광역시",
+    "부산": "부산광역시",
+    "대구": "대구광역시",
+    "대전": "대전광역시",
+    "광주": "광주광역시",
+    "울산": "울산광역시",
+    "세종": "세종특별자치시",
+    "제주": "제주특별자치도",
+    "서귀포": "제주특별자치도",
+    "수원": "경기도",
+    "성남": "경기도",
+    "용인": "경기도",
+    "고양": "경기도",
+    "고양시": "경기도",
+    "파주": "경기도",
+    "가평": "경기도",
+    "양평": "경기도",
+    "경주": "경상북도",
+    "포항": "경상북도",
+    "안동": "경상북도",
+    "구미": "경상북도",
+    "경산": "경상북도",
+    "문경": "경상북도",
+    "상주": "경상북도",
+    "울진": "경상북도",
+    "영덕": "경상북도",
+    "창원": "경상남도",
+    "거제": "경상남도",
+    "통영": "경상남도",
+    "남해": "경상남도",
+    "하동": "경상남도",
+    "거창": "경상남도",
+    "여수": "전라남도",
+    "순천": "전라남도",
+    "목포": "전라남도",
+    "담양": "전라남도",
+    "보성": "전라남도",
+    "전주": "전북특별자치도",
+    "군산": "전북특별자치도",
+    "익산": "전북특별자치도",
+    "남원": "전북특별자치도",
+    "속초": "강원특별자치도",
+    "강릉": "강원특별자치도",
+    "춘천": "강원특별자치도",
+    "평창": "강원특별자치도",
+    "양양": "강원특별자치도",
+    "동해": "강원특별자치도",
+    "태안": "충청남도",
+    "보령": "충청남도",
+    "공주": "충청남도",
+    "청주": "충청북도",
+    "충주": "충청북도",
+    "단양": "충청북도",
+}
+
 # --- 여행 의도 (관계·분위기·이동·기간): GPT + 키워드 폴백 ---
 
 _RELATION_KEYWORDS: dict[str, list[str]] = {
@@ -1157,12 +1215,20 @@ def get_chat_result(
 def _detect_embedding_filters(user_message: str, rows: list[dict]) -> tuple[Optional[str], Optional[str]]:
     """Pinecone 메타데이터용 (region_eq, province_eq). 값은 DB에 저장된 canonical 문자열."""
     um = user_message or ""
-    query_tokens = _tokenize(um.lower())
+    um_l = um.lower()
+    query_tokens = _tokenize(um_l)
 
     for t in query_tokens:
         canon = _PROVINCE_TOKEN_TO_CANONICAL.get(t)
         if canon and any(str(r.get("province") or "").strip() == canon for r in rows):
             return None, canon
+
+    # 시·군명만 있는 경우(예: 경주) DB에 region=도 단위로만 있는 행이 많아 province로 고정
+    for city in sorted(_CITY_TOKEN_TO_PROVINCE.keys(), key=len, reverse=True):
+        prov = _CITY_TOKEN_TO_PROVINCE[city]
+        if city in query_tokens or city in um_l:
+            if any(str(r.get("province") or "").strip() == prov for r in rows):
+                return None, prov
 
     provinces = sorted(
         {str(r.get("province") or "").strip() for r in rows if str(r.get("province") or "").strip()},
@@ -1219,6 +1285,141 @@ def _trip_row_matches_geo_filter(
     return True
 
 
+def _build_trip_planner_baseline_ids(
+    user_message: str,
+    rows: list[dict],
+    row_by_id: dict[int, dict],
+    intent: dict,
+    reg_f: Optional[str],
+    prov_f: Optional[str],
+    candidate_limit: int,
+    current_ids_set: set[int],
+) -> list[int]:
+    """
+    Pinecone 유사도 후보 위에서 _build_recommendation_ids로 재랭킹하고,
+    메인 피드와 동일한 지명·키워드 스코어 후보를 앞에 합친 뒤,
+    부족하면 권역(또는 전체) 풀에서 보충한 다음 reg_f/prov_f에 맞게 다시 좁힌다.
+    """
+    baseline_ids: list[int] = []
+    min_semantic = max(
+        CHAT_PINECONE_MIN_RESULTS,
+        min(candidate_limit, max(3, candidate_limit // 2 + 1)),
+    )
+
+    def pool_for_fallback() -> list[dict]:
+        if reg_f or prov_f:
+            geo_rows = [
+                r for r in rows if _trip_row_matches_geo_filter(r, reg_f, prov_f)
+            ]
+            if geo_rows:
+                return geo_rows
+        return rows
+
+    if embedding_service.pinecone_ready():
+        top_k = max(CHAT_PINECONE_TOP_K, candidate_limit * 3, 24)
+        pinecone_ids: list[int] = []
+        try:
+            pinecone_ids = embedding_service.search(
+                user_message,
+                region_filter=reg_f,
+                top_k=top_k,
+                province_filter=prov_f,
+            )
+        except Exception:
+            logger.exception("[CHAT] pinecone search failed for trip planner")
+            pinecone_ids = []
+        pinecone_rows: list[dict] = []
+        for raw in pinecone_ids:
+            try:
+                pid = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if pid in row_by_id and pid not in current_ids_set:
+                pinecone_rows.append(row_by_id[pid])
+        if pinecone_rows:
+            baseline_ids = _build_recommendation_ids(
+                user_message,
+                pinecone_rows,
+                candidate_limit,
+                intent=intent,
+            )
+            baseline_ids = [i for i in baseline_ids if i not in current_ids_set]
+        if len(baseline_ids) < min_semantic:
+            pool = pool_for_fallback()
+            extra = _build_recommendation_ids(
+                user_message,
+                pool,
+                candidate_limit,
+                intent=intent,
+            )
+            for eid in extra:
+                if (
+                    eid not in baseline_ids
+                    and eid not in current_ids_set
+                    and eid in row_by_id
+                ):
+                    baseline_ids.append(eid)
+                if len(baseline_ids) >= candidate_limit:
+                    break
+    else:
+        pool = pool_for_fallback()
+        baseline_ids = _build_recommendation_ids(
+            user_message,
+            pool,
+            candidate_limit,
+            intent=intent,
+        )
+        baseline_ids = [i for i in baseline_ids if i not in current_ids_set]
+
+    # 메인 피드와 같은 _detect_query_regions·스코어링 후보를 앞에 둔다.
+    # Trip은 Pinecone 상위만 재랭킹하면 질의 지명(전주 등) 행이 풀에 없을 수 있음.
+    pool_lex = pool_for_fallback()
+    lex_cap = max(candidate_limit, 12)
+    lexical_ids = _build_recommendation_ids(
+        user_message,
+        pool_lex,
+        lex_cap,
+        intent=intent,
+    )
+    lexical_ids = [i for i in lexical_ids if i not in current_ids_set and i in row_by_id]
+    merged_ids: list[int] = []
+    seen_merge: set[int] = set()
+    for iid in lexical_ids + baseline_ids:
+        if iid in seen_merge:
+            continue
+        seen_merge.add(iid)
+        merged_ids.append(iid)
+        if len(merged_ids) >= candidate_limit:
+            break
+    if merged_ids:
+        baseline_ids = merged_ids
+
+    if reg_f or prov_f:
+        geo_ids = [
+            i
+            for i in baseline_ids
+            if i in row_by_id and _trip_row_matches_geo_filter(row_by_id[i], reg_f, prov_f)
+        ]
+        if geo_ids:
+            baseline_ids = geo_ids
+        else:
+            geo_rows = [
+                r for r in rows if _trip_row_matches_geo_filter(r, reg_f, prov_f)
+            ]
+            if geo_rows:
+                baseline_ids = _build_recommendation_ids(
+                    user_message,
+                    geo_rows,
+                    candidate_limit,
+                    intent=intent,
+                )
+                baseline_ids = [i for i in baseline_ids if i not in current_ids_set]
+            else:
+                baseline_ids = []
+
+    return baseline_ids
+
+
 def _build_trip_spot_context(rows_subset: list[dict]) -> str:
     lines: list[str] = []
     for row in rows_subset:
@@ -1243,6 +1444,8 @@ def get_trip_chat_result(
     trip_duration: dict,
     current_location_ids: Optional[list[int]] = None,
     exclude_location_id: Optional[int] = None,
+    *,
+    replan: bool = False,
 ) -> dict:
     """Trip planner용 채팅 - OpenAI 답변만 반환 (자동 메시지 없음)"""
     api_key: Optional[str] = os.getenv("OPEN_API_KEY") or os.getenv("OPENAI_API_KEY")
@@ -1250,11 +1453,15 @@ def get_trip_chat_result(
     rows = load_regions()
     valid_region_ids = {int(row["id"]) for row in rows}
 
-    # 현재 로드맵에 있는 ID들을 set으로 변환
-    current_ids_set = set(current_location_ids or [])
-    # 교체 대상 ID도 제외
-    if exclude_location_id:
-        current_ids_set.add(exclude_location_id)
+    if replan:
+        # 전체 재계획: 기존 로드맵·교체 대상 제외는 쓰지 않고 후보부터 다시 짠다.
+        current_ids_set = set()
+        effective_exclude = None
+    else:
+        current_ids_set = set(current_location_ids or [])
+        effective_exclude = exclude_location_id
+        if effective_exclude:
+            current_ids_set.add(effective_exclude)
 
     # tripDuration 기반 최대 개수 계산
     days = trip_duration.get("days", 1)
@@ -1262,45 +1469,42 @@ def get_trip_chat_result(
 
     candidate_limit = max_locations
     # 교체 요청일 때는 제외 필터로 후보가 급감할 수 있어 탐색 폭을 넓혀둔다.
-    if exclude_location_id is not None:
+    if not replan and effective_exclude is not None:
         candidate_limit = max(max_locations + 20, max_locations * 3)
 
     row_by_id = {int(r["id"]): r for r in rows}
-    intent = _parse_intent(user_message)
+    try:
+        duration_for_intent = int(days) if days is not None else None
+    except (TypeError, ValueError):
+        duration_for_intent = None
+    intent = _parse_intent(user_message, duration=duration_for_intent)
     reg_f, prov_f = _detect_embedding_filters(user_message, rows)
-    baseline_ids: list[int] = []
-    if embedding_service.pinecone_ready():
-        top_k = max(1, days * 10)
-        baseline_ids = embedding_service.search(
-            user_message,
-            region_filter=reg_f,
-            top_k=top_k,
-            province_filter=prov_f,
-        )
-        baseline_ids = [i for i in baseline_ids if i in row_by_id and i not in current_ids_set]
-        if len(baseline_ids) < max(3, max_locations // 2):
-            extra = _build_recommendation_ids(
-                user_message, rows, candidate_limit, intent=intent
-            )
-            for eid in extra:
-                if eid not in baseline_ids and eid not in current_ids_set and eid in row_by_id:
-                    baseline_ids.append(eid)
-                if len(baseline_ids) >= candidate_limit:
-                    break
-    if not baseline_ids:
+    baseline_ids = _build_trip_planner_baseline_ids(
+        user_message,
+        rows,
+        row_by_id,
+        intent,
+        reg_f,
+        prov_f,
+        candidate_limit,
+        current_ids_set,
+    )
+
+    if not baseline_ids and not reg_f and not prov_f:
         baseline_ids = _build_recommendation_ids(
             user_message, rows, candidate_limit, intent=intent
         )
         baseline_ids = [i for i in baseline_ids if i not in current_ids_set]
 
-    if reg_f or prov_f:
-        geo_ids = [
-            i
-            for i in baseline_ids
-            if i in row_by_id and _trip_row_matches_geo_filter(row_by_id[i], reg_f, prov_f)
-        ]
-        if geo_ids:
-            baseline_ids = geo_ids
+    if (reg_f or prov_f) and not baseline_ids:
+        label = reg_f or prov_f or "해당 지역"
+        return {
+            "answer": (
+                f"말씀하신 권역('{label}')에 맞는 장소를 데이터에서 찾지 못했어요. "
+                "지역명을 조금 바꾸거나, 아직 데이터에 없는 지역일 수 있습니다."
+            ),
+            "recommendedRegionIds": [],
+        }
 
     recommended_ids = _normalize_trip_recommended_ids(
         baseline_ids,
@@ -1333,20 +1537,32 @@ def get_trip_chat_result(
         system_prompt += f"반드시 행정구역이 '{prov_f}'인 장소만 선택하세요. 다른 시·도는 제외합니다. "
     if reg_f:
         system_prompt += f"시·군·구는 '{reg_f}'와 일치하는 장소만 선택하세요. 지명이 어긋나면 후보에 있어도 넣지 마세요. "
+    if replan:
+        system_prompt += (
+            " 사용자가 기존 일정을 버리고 전체 코스를 새로 짜 달라고 요청했습니다. "
+            "이전 로드맵은 무시하고 recommendedRegionIds에 후보 id만으로 최대 개수까지 새로 채우세요. "
+            "빈 배열로 두지 마세요(후보가 부족하면 있는 만큼). "
+        )
     system_prompt += "응답은 반드시 json 객체 한 개로만 반환하세요."
     intent_context = _build_intent_context_lines(intent)
     user_atmosphere_hint = (
         "[중요] 후보의 ‘설명’을 읽고 분위기·감성·동행 맥락이 사용자 조건과 맞는 id를 고르세요. "
         "이름만 보고 고르지 마세요.\n\n"
     )
-    n_on_map = len(current_location_ids or [])
+    n_on_map = 0 if replan else len(current_location_ids or [])
     roadmap_cap_note = ""
-    if n_on_map >= max_locations:
+    if not replan and n_on_map >= max_locations:
         roadmap_cap_note = (
             "\n[상태] 지금 로드맵에 이미 최대 개수에 가깝거나 찼습니다. "
             "사용자가 동행(친구·연인 등)·분위기·짧은 한마디만 하는 경우에는 answer로만 먼저 반응하고, "
             "recommendedRegionIds는 빈 배열 [] 로 두거나 새 id를 넣지 마세요. "
             "장소 추가·교체·기간 연장을 명시했을 때만 id를 채우세요.\n"
+        )
+    replan_user_note = ""
+    if replan:
+        replan_user_note = (
+            "\n[요청 유형] 일정 전체 재구성(replan). 기존 로드맵·이전 장소는 참고하지 말고 "
+            f"새 recommendedRegionIds를 최대 {max_locations}개까지 채우세요.\n"
         )
 
     try:
@@ -1363,6 +1579,7 @@ def get_trip_chat_result(
                         f"{trip_ctx}\n\n"
                         f"{user_atmosphere_hint}"
                         + (f"사용자 조건:\n{intent_context}\n\n" if intent_context.strip() else "")
+                        + replan_user_note
                         + roadmap_cap_note
                         + f"recommendedRegionIds에는 위 id만 사용하고 최대 {max_locations}개까지 포함하세요. "
                         f'형식: {{"answer":"...", "recommendedRegionIds":[...]}}\n'

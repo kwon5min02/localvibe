@@ -127,12 +127,8 @@ export default function RegionModal({
           </details>
         )}
         {region.dataSource && <p className="modal-source">출처: {region.dataSource}</p>}
-        {isLoading ? (
-          <p className="kakao-map-error">지도 좌표를 준비하는 중입니다...</p>
-        ) : (
-          <KakaoMap address={region.address} latitude={region.latitude} longitude={region.longitude} />
-        )}
-        {isLoading && <p className="modal-loading">상세 데이터를 불러오는 중...</p>}
+        <KakaoMap address={region.address} latitude={region.latitude} longitude={region.longitude} />
+        {isLoading && <p className="modal-loading">상세·인사이트 데이터를 불러오는 중...</p>}
         {crawlImageUrls.length > 0 && (
           <section className="modal-crawl-section" aria-label="크롤링 이미지">
             <h3 className="modal-section-title">블로그에서 모은 사진</h3>

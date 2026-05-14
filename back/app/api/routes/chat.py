@@ -24,4 +24,5 @@ def trip_chat(payload: TripChatRequest):
         {"nights": payload.tripDuration.nights, "days": payload.tripDuration.days},
         payload.currentLocationIds or [],
         payload.excludeLocationId,
+        replan=bool(payload.replan),
     )

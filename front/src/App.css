@@ -656,6 +656,12 @@ body {
   font-size: 14px;
 }
 
+.kakao-map-error-secondary {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #8b939e;
+}
+
 .kakao-map-link {
   display: inline-block;
   margin-top: 10px;
@@ -845,6 +851,21 @@ body {
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
+}
+
+.trip-planner-route-map {
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px solid #e2e7f3;
+  border-radius: 14px;
+  background: #fbfcff;
+}
+
+.trip-planner-route-map-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #2d3a52;
 }
 
 .trip-planner-right {
@@ -1471,6 +1492,18 @@ body {
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid #e2e5ec;
+}
+
+.multi-marker-map-canvas--placeholder {
+  min-height: 280px;
+  height: 280px;
+  background: linear-gradient(180deg, #f4f6fb 0%, #e8ecf5 100%);
+}
+
+.multi-marker-map-loading {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #5d6575;
 }
 
 .multi-marker-map-error {
