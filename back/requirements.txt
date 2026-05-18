@@ -11,3 +11,4 @@ pymysql
 cryptography
 pinecone
 sentence-transformers
+apscheduler

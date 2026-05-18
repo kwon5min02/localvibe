@@ -28,8 +28,10 @@ async def lifespan(_app: FastAPI):
             "mysql+pymysql://... 형식으로 연결 문자열을 설정하세요."
         )
     from app.repositories.regions_store import init_region_db
+    from app.services.crawl_scheduler import start_scheduler
 
     init_region_db()
+    start_scheduler()
     yield
 
 
