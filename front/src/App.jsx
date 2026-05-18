@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import TopHeader from './components/TopHeader';
+import { useNavigate } from 'react-router-dom';
+import { googleLogout } from '@react-oauth/google';
+import CommonHeader from './components/CommonHeader';
 import GallerySearchBox from './components/GallerySearchBox';
 import RegionGallery from './components/RegionGallery';
 import RegionModal from './components/RegionModal';
@@ -7,636 +9,451 @@ import { defaultRegions } from './data/defaultRegions';
 import TripPlannerPage from './pages/TripPlannerPage';
 import MyPage from './pages/MyPage';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 const FEED_SIZE = 9;
 const GALLERY_VECTOR_ACTIVE_KEY = 'lv_gallery_vector_active';
 const GALLERY_SEARCH_RESULTS_KEY = 'lv_gallery_search_results';
 const SIDEBAR_WIDTH_KEY = 'lv_sidebar_width';
-const SIDEBAR_WIDTH_DEFAULT = 204;
-const SIDEBAR_WIDTH_MIN = 168;
-const SIDEBAR_WIDTH_MAX = 420;
+const SIDEBAR_WIDTH_DEFAULT = 210;
+const SIDEBAR_WIDTH_MIN = 170;
+const SIDEBAR_WIDTH_MAX = 360;
 
 function readInitialSidebarWidth() {
-  if (typeof localStorage === 'undefined') {
-    return SIDEBAR_WIDTH_DEFAULT;
-  }
-  try {
-    const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY);
-    const n = raw != null ? Number(raw) : NaN;
-    if (!Number.isFinite(n)) {
-      return SIDEBAR_WIDTH_DEFAULT;
-    }
-    return Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(n)));
-  } catch {
-    return SIDEBAR_WIDTH_DEFAULT;
-  }
+  try { const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY); const n = Number(raw); return Number.isFinite(n) ? Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(n))) : SIDEBAR_WIDTH_DEFAULT; } catch { return SIDEBAR_WIDTH_DEFAULT; }
 }
+function isGalleryVectorFeedLocked() { try { return sessionStorage.getItem(GALLERY_VECTOR_ACTIVE_KEY) === '1'; } catch { return false; } }
+function readPersistedGalleryRegions() { try { if (sessionStorage.getItem(GALLERY_VECTOR_ACTIVE_KEY) !== '1') return null; const raw = sessionStorage.getItem(GALLERY_SEARCH_RESULTS_KEY); if (!raw) return null; const arr = JSON.parse(raw); return Array.isArray(arr) && arr.length > 0 ? arr : null; } catch { return null; } }
+function persistGalleryVectorResults(mapped) { try { sessionStorage.setItem(GALLERY_VECTOR_ACTIVE_KEY, '1'); sessionStorage.setItem(GALLERY_SEARCH_RESULTS_KEY, JSON.stringify(mapped)); } catch {} }
 
-function isGalleryVectorFeedLocked() {
-  if (typeof sessionStorage === 'undefined') {
-    return false;
-  }
-  try {
-    return sessionStorage.getItem(GALLERY_VECTOR_ACTIVE_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function readPersistedGalleryRegions() {
-  if (typeof sessionStorage === 'undefined') {
-    return null;
-  }
-  try {
-    if (sessionStorage.getItem(GALLERY_VECTOR_ACTIVE_KEY) !== '1') {
-      return null;
-    }
-    const raw = sessionStorage.getItem(GALLERY_SEARCH_RESULTS_KEY);
-    if (!raw) {
-      return null;
-    }
-    const arr = JSON.parse(raw);
-    if (!Array.isArray(arr) || arr.length === 0) {
-      return null;
-    }
-    return arr;
-  } catch {
-    return null;
-  }
-}
-
-function persistGalleryVectorResults(mapped) {
-  try {
-    sessionStorage.setItem(GALLERY_VECTOR_ACTIVE_KEY, '1');
-    sessionStorage.setItem(GALLERY_SEARCH_RESULTS_KEY, JSON.stringify(mapped));
-  } catch {
-    // 사생활 보호 모드·할당량 등
-  }
-}
-const SIDEBAR_MENU = [
-  { id: 'gallery', label: '🗺 지역 갤러리', section: '메인' },
-  { id: 'planner', label: '✈ 여행 플래너', section: '메인' },
-  { id: 'mypage', label: '👤 마이페이지', section: '메인' },
-  { id: 'gwangju', label: '📍 광주', section: '지역' },
-  { id: 'jeonnam', label: '📍 전남', section: '지역' },
-  { id: 'about', label: '💡 서비스 소개', section: '정보' },
-  { id: 'contact', label: '📬 문의하기', section: '정보' },
+const REGION_TREE = [
+  { id: 'metro',       label: '수도권', children: ['서울', '경기', '인천'] },
+  { id: 'gangwon',     label: '강원',   children: ['강릉', '춘천', '원주', '속초'] },
+  { id: 'chungcheong', label: '충청',   children: ['대전', '청주', '천안', '충주'] },
+  { id: 'jeolla',      label: '전라',   children: ['광주', '전주', '여수', '순천', '목포'] },
+  { id: 'gyeongsang',  label: '경상',   children: ['부산', '대구', '경주', '울산', '포항'] },
+  { id: 'jeju',        label: '제주',   children: ['제주시', '서귀포'] },
 ];
 
-function normalizeTextKey(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/\s+/g, '')
-    .trim();
-}
+const PAGE_INFO = {
+  gallery: { title: '지역 갤러리',   subtitle: 'AI 기반으로 숨은 로컬 스팟을 찾아드려요.' },
+  planner: { title: '여행 플래너',   subtitle: '챗봇과 함께 나만의 여행 일정을 만들어보세요.' },
+  mypage:  { title: '마이페이지',    subtitle: '스크랩한 장소와 내 여행 일정을 관리하세요.' },
+};
 
-function normalizeImageKey(imageUrl) {
-  const value = String(imageUrl || '')
-    .trim()
-    .toLowerCase();
-  if (!value) {
-    return '';
-  }
-  return value.replace(/^https?:/, '');
-}
+function normalizeTextKey(v) { return String(v || '').toLowerCase().replace(/\s+/g, '').trim(); }
+function normalizeImageKey(u) { const v = String(u || '').trim().toLowerCase(); return v ? v.replace(/^https?:/, '') : ''; }
 
 function pickFeedItems(items, size = FEED_SIZE) {
-  if (!Array.isArray(items) || items.length === 0) {
-    return [];
-  }
-
+  if (!Array.isArray(items) || !items.length) return [];
   const shuffled = [...items].sort(() => Math.random() - 0.5);
-  const picked = [];
-  const usedImageKeys = new Set();
-  const usedNameKeys = new Set();
-
+  const picked = [], usedImg = new Set(), usedName = new Set();
   for (const item of shuffled) {
-    const nameKey = normalizeTextKey(item?.name);
-    const imageKey = normalizeImageKey(item?.imageUrl);
-    if (!nameKey || usedNameKeys.has(nameKey)) {
-      continue;
-    }
-    if (imageKey && usedImageKeys.has(imageKey)) {
-      continue;
-    }
-    picked.push(item);
-    usedNameKeys.add(nameKey);
-    if (imageKey) {
-      usedImageKeys.add(imageKey);
-    }
-    if (picked.length >= size) {
-      return picked;
-    }
+    const nk = normalizeTextKey(item?.name), ik = normalizeImageKey(item?.imageUrl);
+    if (!nk || usedName.has(nk) || (ik && usedImg.has(ik))) continue;
+    picked.push(item); usedName.add(nk); if (ik) usedImg.add(ik);
+    if (picked.length >= size) return picked;
   }
-
-  // 후보가 부족할 때는 이름 중복만 막고 채웁니다.
-  for (const item of shuffled) {
-    const nameKey = normalizeTextKey(item?.name);
-    if (!nameKey || usedNameKeys.has(nameKey)) {
-      continue;
-    }
-    picked.push(item);
-    usedNameKeys.add(nameKey);
-    if (picked.length >= size) {
-      break;
-    }
-  }
-
+  for (const item of shuffled) { const nk = normalizeTextKey(item?.name); if (!nk || usedName.has(nk)) continue; picked.push(item); usedName.add(nk); if (picked.length >= size) break; }
   return picked.slice(0, size);
 }
 
 function mapSearchHitToRegion(row, regionMap) {
-  const id = Number(row.place_id);
-  const base = regionMap.get(id);
-  const sim =
-    row.pinecone_similarity != null && !Number.isNaN(Number(row.pinecone_similarity))
-      ? `Pinecone 유사도 ${Number(row.pinecone_similarity).toFixed(3)}`
-      : '';
-  const rank =
-    row.score != null && !Number.isNaN(Number(row.score))
-      ? `랭킹점수 ${Number(row.score).toFixed(3)}`
-      : '';
-  const bits = [row.category, row.region, sim, rank].filter(Boolean).join(' · ');
-  return {
-    id,
-    name: row.name || base?.name || '이름 없음',
-    imageUrl: base?.imageUrl || '',
-    summary: base?.summary || bits || '상세 설명이 없습니다.',
-    summaryShort: sim || base?.summaryShort,
-    address: base?.address,
-    latitude: base?.latitude,
-    longitude: base?.longitude,
-    region: row.region || base?.region,
-    province: row.province || base?.province,
-    dataSource: base?.dataSource,
-    sourceId: base?.sourceId,
-    recommendedBusinesses:
-      base?.recommendedBusinesses?.length > 0
-        ? base.recommendedBusinesses
-        : row.category
-          ? [row.category]
-          : [],
-    busyHours: base?.busyHours || [],
-    targetCustomers: base?.targetCustomers || [],
-  };
+  const id = Number(row.place_id), base = regionMap.get(id);
+  const sim = row.pinecone_similarity != null ? `유사도 ${Number(row.pinecone_similarity).toFixed(3)}` : '';
+  return { id, name: row.name || base?.name || '이름 없음', imageUrl: base?.imageUrl || '', summary: base?.summary || [row.category, row.region, sim].filter(Boolean).join(' · ') || '상세 설명이 없습니다.', summaryShort: sim || base?.summaryShort, address: base?.address, latitude: base?.latitude, longitude: base?.longitude, region: row.region || base?.region, province: row.province || base?.province, dataSource: base?.dataSource, sourceId: base?.sourceId, recommendedBusinesses: base?.recommendedBusinesses?.length > 0 ? base.recommendedBusinesses : row.category ? [row.category] : [], busyHours: base?.busyHours || [], targetCustomers: base?.targetCustomers || [] };
+}
+
+// 여행 선택 모달
+function TripSelectModal({ myTrips, onSelect, onCreateNew, onClose }) {
+  return (
+    <div className="trip-select-backdrop" onClick={onClose}>
+      <div className="trip-select-modal" onClick={e => e.stopPropagation()}>
+        <div className="trip-select-header">
+          <h2 className="trip-select-title">어떤 여행에 담을까요?</h2>
+          <button type="button" className="trip-select-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="trip-select-body">
+          {myTrips.length === 0
+            ? <p style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: '16px 0', margin: 0 }}>아직 만든 여행이 없어요.</p>
+            : myTrips.map(trip => (
+              <button key={trip.id} type="button" className="trip-select-item" onClick={() => onSelect(trip.id)}>
+                <div style={{ textAlign: 'left' }}>
+                  <div className="trip-select-item-name">{trip.name}</div>
+                  <div className="trip-select-item-count">{trip.places.length}개 장소 · {new Date(trip.createdAt).toLocaleDateString('ko-KR')}</div>
+                </div>
+                <span style={{ fontSize: 16, color: '#ccc' }}>›</span>
+              </button>
+            ))
+          }
+        </div>
+        <div className="trip-select-footer">
+          <button type="button" className="trip-select-new-btn" onClick={onCreateNew}>+ 새 여행 만들고 담기</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 사이드바 계정 영역
+function SidebarAccount({ currentUser, onAccountClick, onLoginClick }) {
+  if (currentUser) {
+    return (
+      <button type="button" className="sidebar-account-card" onClick={onAccountClick} title="계정 메뉴" style={{ cursor: 'pointer', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: 0, fontFamily: 'inherit' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+          {currentUser.picture
+            ? <img src={currentUser.picture} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, border: '1px solid #eee' }} />
+            : <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 11, color: '#555', flexShrink: 0 }}>{String(currentUser.name || 'U').slice(0, 1).toUpperCase()}</div>
+          }
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentUser.name || '사용자'}</div>
+            <div style={{ fontSize: 10, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentUser.email}</div>
+          </div>
+        </div>
+        <span style={{ fontSize: 13, color: '#bbb', flexShrink: 0 }}>⋯</span>
+      </button>
+    );
+  }
+  // 미로그인 — 임시 프로필
+  return (
+    <button type="button" className="sidebar-account-guest" onClick={onLoginClick}>
+      <div className="sidebar-account-guest-avatar">👤</div>
+      <div className="sidebar-account-guest-text">
+        <span className="sidebar-account-guest-name">로그인이 필요해요</span>
+        <span className="sidebar-account-guest-sub">클릭해서 시작하기</span>
+      </div>
+    </button>
+  );
 }
 
 export default function App() {
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem('lv_access_token') || '');
-  const [currentUser, setCurrentUser] = useState(() => {
-    try {
-      const raw = localStorage.getItem('lv_user');
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  });
+  const navigate = useNavigate();
+  const [currentUser, setCurrentUser] = useState(() => { try { const raw = localStorage.getItem('lv_user'); return raw ? JSON.parse(raw) : null; } catch { return null; } });
   const [regions, setRegions] = useState(defaultRegions);
-  const [displayedRegions, setDisplayedRegions] = useState(() => {
-    const persisted = readPersistedGalleryRegions();
-    return persisted ?? defaultRegions;
-  });
+  const [displayedRegions, setDisplayedRegions] = useState(() => readPersistedGalleryRegions() ?? defaultRegions);
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [insightRegion, setInsightRegion] = useState(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('gallery'); // "gallery" or "planner"
-  const [scrappedIds, setScrappedIds] = useState(() => {
-    try {
-      const parsed = JSON.parse(localStorage.getItem('lv_scraps') || '[]');
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  });
+  const [activeTab, setActiveTab] = useState('gallery');
+  const [scrappedIds, setScrappedIds] = useState(() => { try { const p = JSON.parse(localStorage.getItem('lv_scraps') || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } });
+  const [myTrips, setMyTrips] = useState(() => { try { const p = JSON.parse(localStorage.getItem('lv_my_trips') || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } });
   const [modalCrawlImages, setModalCrawlImages] = useState([]);
   const [modalArticle, setModalArticle] = useState(null);
   const [modalArticleLoading, setModalArticleLoading] = useState(false);
   const [gallerySearchBusy, setGallerySearchBusy] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialSidebarWidth);
-  /** 갤러리 벡터 검색으로 `displayedRegions`를 채운 뒤에는 초기 `/api/regions` 응답이 늦게 도착해도 덮어쓰지 않습니다. */
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [openRegions, setOpenRegions] = useState({});
+  const [accountPopupOpen, setAccountPopupOpen] = useState(false);
+  const [tripSelectRegion, setTripSelectRegion] = useState(null);
+  const [chatbotOpen, setChatbotOpen] = useState(false);
+  const [chatbotMessages, setChatbotMessages] = useState([{ role: 'assistant', text: '안녕하세요! 어떤 장소를 찾고 계신가요?\n예: 여자친구랑 감성 카페, 가족 당일치기' }]);
+  const [chatbotInput, setChatbotInput] = useState('');
+  const [chatbotBusy, setChatbotBusy] = useState(false);
+  const chatMessagesRef = useRef(null);
+  const accountAreaRef = useRef(null);
   const galleryVectorSearchActiveRef = useRef(isGalleryVectorFeedLocked());
-  /** 가장 최근에 시작한 검색만 결과를 반영합니다(늦게 도착한 이전 요청 무시). */
   const gallerySearchSeqRef = useRef(0);
 
-  useEffect(() => {
-    let isMounted = true;
+  useEffect(() => { const sync = () => { try { const raw = localStorage.getItem('lv_user'); setCurrentUser(raw ? JSON.parse(raw) : null); } catch { setCurrentUser(null); } }; window.addEventListener('lv-auth-changed', sync); return () => window.removeEventListener('lv-auth-changed', sync); }, []);
 
-    async function fetchRegions() {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/regions`);
-        if (!response.ok) {
-          return;
-        }
+  useEffect(() => { let m = true; fetch(`${API_BASE_URL}/api/regions`).then(r => r.ok ? r.json() : null).then(data => { if (!m || !Array.isArray(data?.regions) || !data.regions.length) return; setRegions(data.regions); if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) setDisplayedRegions(pickFeedItems(data.regions)); }).catch(() => { if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) setDisplayedRegions(pickFeedItems(defaultRegions)); }); return () => { m = false; }; }, []);
 
-        const data = await response.json();
-        if (
-          isMounted &&
-          Array.isArray(data?.regions) &&
-          data.regions.length > 0
-        ) {
-          setRegions(data.regions);
-          if (
-            !galleryVectorSearchActiveRef.current &&
-            !isGalleryVectorFeedLocked()
-          ) {
-            setDisplayedRegions(pickFeedItems(data.regions));
-          }
-        }
-      } catch {
-        // 백엔드 미실행 상태에서도 UI 초안이 보이도록 기본 데이터를 유지합니다.
-        if (
-          !galleryVectorSearchActiveRef.current &&
-          !isGalleryVectorFeedLocked()
-        ) {
-          setDisplayedRegions(pickFeedItems(defaultRegions));
-        }
-      }
-    }
-
-    fetchRegions();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  useEffect(() => { let m = true; if (!selectedRegion?.id) { setInsightRegion(null); return; } setIsInsightLoading(true); fetch(`${API_BASE_URL}/api/regions/${selectedRegion.id}/insight`).then(r => r.ok ? r.json() : null).then(data => { if (m && data?.region) setInsightRegion(data.region); }).catch(() => {}).finally(() => { if (m) setIsInsightLoading(false); }); return () => { m = false; }; }, [selectedRegion]);
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function fetchRegionInsight() {
-      if (!selectedRegion?.id) {
-        setInsightRegion(null);
-        return;
-      }
-
-      setIsInsightLoading(true);
+    const id = selectedRegion?.id; if (!id) { setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(false); return; }
+    let cancelled = false; setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(true);
+    (async () => {
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/api/regions/${selectedRegion.id}/insight`,
-        );
-        if (!response.ok) {
-          return;
-        }
-
-        const data = await response.json();
-        if (isMounted && data?.region) {
-          setInsightRegion(data.region);
-        }
-      } catch {
-        // 상세 API 실패 시에도 선택한 기본 카드 정보는 유지합니다.
-      } finally {
-        if (isMounted) {
-          setIsInsightLoading(false);
-        }
-      }
-    }
-
-    fetchRegionInsight();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedRegion]);
-
-  useEffect(() => {
-    const id = selectedRegion?.id;
-    if (!id) {
-      setModalCrawlImages([]);
-      setModalArticle(null);
-      setModalArticleLoading(false);
-      return;
-    }
-    let cancelled = false;
-    async function loadPlaceExtras() {
-      setModalCrawlImages([]);
-      setModalArticle(null);
-      setModalArticleLoading(true);
-      try {
-        await fetch(`${API_BASE_URL}/api/places/${id}/crawl`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        });
-        if (cancelled) {
-          return;
-        }
-        const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`);
-        if (imgRes.ok) {
-          const imgData = await imgRes.json();
-          const urls = (imgData.images || []).map((x) => x.url).filter(Boolean);
-          if (!cancelled) {
-            setModalCrawlImages(urls);
-          }
-        }
-        const artRes = await fetch(`${API_BASE_URL}/api/places/${id}/article`);
-        if (cancelled) {
-          return;
-        }
-        if (artRes.ok) {
-          const art = await artRes.json();
-          if (!cancelled) {
-            setModalArticle({ title: art.title || '', content: art.content || '' });
-          }
-        } else if (!cancelled) {
-          setModalArticle({ title: '', content: '아티클을 불러오지 못했습니다.' });
-        }
-      } catch {
-        if (!cancelled) {
-          setModalArticle({ title: '', content: '네트워크 오류로 상세를 불러오지 못했습니다.' });
-        }
-      } finally {
-        if (!cancelled) {
-          setModalArticleLoading(false);
-        }
-      }
-    }
-    loadPlaceExtras();
-    return () => {
-      cancelled = true;
-    };
+        await fetch(`${API_BASE_URL}/api/places/${id}/crawl`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); if (cancelled) return;
+        const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`); if (imgRes.ok && !cancelled) { const d = await imgRes.json(); setModalCrawlImages((d.images || []).map(x => x.url).filter(Boolean)); }
+        if (cancelled) return; const artRes = await fetch(`${API_BASE_URL}/api/places/${id}/article`); if (cancelled) return;
+        if (artRes.ok) { const a = await artRes.json(); if (!cancelled) setModalArticle({ title: a.title || '', content: a.content || '' }); }
+        else if (!cancelled) setModalArticle({ title: '', content: '아티클을 불러오지 못했습니다.' });
+      } catch { if (!cancelled) setModalArticle({ title: '', content: '네트워크 오류입니다.' }); }
+      finally { if (!cancelled) setModalArticleLoading(false); }
+    })();
+    return () => { cancelled = true; };
   }, [selectedRegion?.id]);
 
-  const handleSidebarResizePointerDown = useCallback(
-    e => {
-      if (e.button !== 0) {
-        return;
-      }
-      e.preventDefault();
-      const startX = e.clientX;
-      const startW = sidebarWidth;
-      let lastW = startW;
+  useEffect(() => { if (chatMessagesRef.current) chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight; }, [chatbotMessages, chatbotBusy]);
 
-      const onMove = ev => {
-        const dx = ev.clientX - startX;
-        lastW = Math.min(
-          SIDEBAR_WIDTH_MAX,
-          Math.max(SIDEBAR_WIDTH_MIN, Math.round(startW + dx)),
-        );
-        setSidebarWidth(lastW);
-      };
+  useEffect(() => {
+    if (!accountPopupOpen) return;
+    const handler = (e) => { if (accountAreaRef.current && !accountAreaRef.current.contains(e.target)) setAccountPopupOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [accountPopupOpen]);
 
-      const end = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', end);
-        window.removeEventListener('pointercancel', end);
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-        try {
-          localStorage.setItem(SIDEBAR_WIDTH_KEY, String(lastW));
-        } catch {
-          // storage full / private mode
-        }
-      };
+  const handleSidebarResizePointerDown = useCallback((e) => {
+    if (e.button !== 0) return; e.preventDefault();
+    const startX = e.clientX, startW = sidebarWidth; let lastW = startW;
+    const onMove = ev => { lastW = Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(startW + ev.clientX - startX))); setSidebarWidth(lastW); };
+    const end = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', end); document.body.style.cursor = ''; document.body.style.userSelect = ''; try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(lastW)); } catch {} };
+    document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', end);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+  }, [sidebarWidth]);
 
-      document.body.style.cursor = 'col-resize';
-      document.body.style.userSelect = 'none';
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', end);
-      window.addEventListener('pointercancel', end);
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {
-        // 일부 브라우저에서 캡처 실패해도 window 리스너로 동작합니다.
-      }
-    },
-    [sidebarWidth],
-  );
+  const regionMap = useMemo(() => new Map(regions.map(r => [r.id, r])), [regions]);
 
-  const regionMap = useMemo(() => {
-    return new Map(regions.map(region => [region.id, region]));
-  }, [regions]);
+  const galleryDisplayRegions = useMemo(() => displayedRegions.map(r => {
+    const id = Number(r?.id); if (!Number.isFinite(id)) return r;
+    const base = regionMap.get(id); if (!base) return r;
+    const s = r.summary && String(r.summary).trim() && r.summary !== '상세 설명이 없습니다.' ? r.summary : base.summary || r.summary;
+    return { ...r, imageUrl: base.imageUrl || r.imageUrl || '', summary: s, address: r.address || base.address, latitude: r.latitude ?? base.latitude, longitude: r.longitude ?? base.longitude, province: r.province || base.province };
+  }), [displayedRegions, regionMap]);
 
-  /** 검색 직후에는 `displayedRegions`에 imageUrl이 비어 있을 수 있음. `/api/regions` 갱신 후 regionMap과 다시 합칩니다. */
-  const galleryDisplayRegions = useMemo(() => {
-    return displayedRegions.map(r => {
-      const id = Number(r?.id);
-      if (!Number.isFinite(id)) {
-        return r;
-      }
-      const base = regionMap.get(id);
-      if (!base) {
-        return r;
-      }
-      const mergedSummary =
-        r.summary && String(r.summary).trim() && r.summary !== '상세 설명이 없습니다.'
-          ? r.summary
-          : base.summary || r.summary;
-      return {
-        ...r,
-        imageUrl: base.imageUrl || r.imageUrl || '',
-        summary: mergedSummary,
-        address: r.address || base.address,
-        latitude: r.latitude ?? base.latitude,
-        longitude: r.longitude ?? base.longitude,
-        province: r.province || base.province,
-        sourceId: r.sourceId || base.sourceId,
-        dataSource: r.dataSource || base.dataSource,
-        contentTypeId: r.contentTypeId ?? base.contentTypeId,
-      };
-    });
-  }, [displayedRegions, regionMap]);
-
-  const handleGalleryVectorSearch = useCallback(
-    async (q) => {
-      const trimmed = String(q || '').trim();
-      if (!trimmed) {
-        return false;
-      }
-      const seq = ++gallerySearchSeqRef.current;
-      setGallerySearchBusy(true);
-      try {
-        const url = new URL(`${API_BASE_URL}/api/search`);
-        url.searchParams.set('q', trimmed);
-        const res = await fetch(url.toString());
-        if (seq !== gallerySearchSeqRef.current) {
-          return false;
-        }
-        if (!res.ok) {
-          window.alert('검색 요청에 실패했습니다.');
-          return false;
-        }
-        const data = await res.json();
-        const rows = Array.isArray(data?.results) ? data.results : [];
-        const mapped = rows.map((row) => mapSearchHitToRegion(row, regionMap));
-        if (seq !== gallerySearchSeqRef.current) {
-          return false;
-        }
-        if (mapped.length > 0) {
-          galleryVectorSearchActiveRef.current = true;
-          persistGalleryVectorResults(mapped);
-          setDisplayedRegions(mapped);
-          return true;
-        }
-        window.alert('검색 결과가 없습니다. 다른 키워드를 시도해 보세요.');
-        return false;
-      } catch {
-        if (seq === gallerySearchSeqRef.current) {
-          window.alert('네트워크 오류입니다. 백엔드가 실행 중인지 확인해 주세요.');
-        }
-        return false;
-      } finally {
-        if (seq === gallerySearchSeqRef.current) {
-          setGallerySearchBusy(false);
-        }
-      }
-    },
-    [regionMap],
-  );
-
-  const handleToggleScrap = regionId => {
-    setScrappedIds(prev => {
-      const exists = prev.includes(regionId);
-      const next = exists ? prev.filter(id => id !== regionId) : [...prev, regionId];
-      localStorage.setItem('lv_scraps', JSON.stringify(next));
-      return next;
-    });
-  };
-
-  const scrappedRegions = useMemo(
-    () => regions.filter(region => scrappedIds.includes(region.id)),
-    [regions, scrappedIds],
-  );
-
-  const handleGoogleCredential = async credential => {
+  const handleGalleryVectorSearch = useCallback(async (q) => {
+    const trimmed = String(q || '').trim(); if (!trimmed) return false;
+    const seq = ++gallerySearchSeqRef.current; setGallerySearchBusy(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_token: credential }),
-      });
-      if (!response.ok) {
-        throw new Error('google login failed');
-      }
-      const data = await response.json();
-      const nextToken = String(data?.access_token || '');
-      const nextUser = data?.user || null;
-      if (!nextToken || !nextUser) {
-        throw new Error('invalid auth response');
-      }
+      const url = new URL(`${API_BASE_URL}/api/search`); url.searchParams.set('q', trimmed);
+      const res = await fetch(url.toString()); if (seq !== gallerySearchSeqRef.current) return false;
+      if (!res.ok) { window.alert('검색 요청에 실패했습니다.'); return false; }
+      const data = await res.json();
+      const mapped = (Array.isArray(data?.results) ? data.results : []).map(row => mapSearchHitToRegion(row, regionMap));
+      if (seq !== gallerySearchSeqRef.current) return false;
+      if (mapped.length > 0) { galleryVectorSearchActiveRef.current = true; persistGalleryVectorResults(mapped); setDisplayedRegions(mapped); return true; }
+      window.alert('검색 결과가 없습니다.'); return false;
+    } catch { if (seq === gallerySearchSeqRef.current) window.alert('네트워크 오류입니다.'); return false; }
+    finally { if (seq === gallerySearchSeqRef.current) setGallerySearchBusy(false); }
+  }, [regionMap]);
 
-      setAuthToken(nextToken);
-      setCurrentUser(nextUser);
-      localStorage.setItem('lv_access_token', nextToken);
-      localStorage.setItem('lv_user', JSON.stringify(nextUser));
-    } catch {
-      setAuthToken('');
-      setCurrentUser(null);
-      localStorage.removeItem('lv_access_token');
-      localStorage.removeItem('lv_user');
-      window.alert('구글 로그인에 실패했습니다. 잠시 후 다시 시도해주세요.');
-    }
+  const handleChatbotSubmit = async (e) => {
+    e.preventDefault(); const msg = chatbotInput.trim(); if (!msg || chatbotBusy) return;
+    setChatbotMessages(prev => [...prev, { role: 'user', text: msg }]); setChatbotInput(''); setChatbotBusy(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg }) });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setChatbotMessages(prev => [...prev, { role: 'assistant', text: data.answer || '추천이 완료됐어요!' }]);
+      if (Array.isArray(data.recommendedRegionIds) && data.recommendedRegionIds.length > 0) {
+        const newRegions = data.recommendedRegionIds.map(id => regionMap.get(Number(id))).filter(Boolean);
+        if (newRegions.length > 0) setDisplayedRegions(newRegions);
+      }
+    } catch { setChatbotMessages(prev => [...prev, { role: 'assistant', text: '오류가 발생했어요.' }]); }
+    finally { setChatbotBusy(false); }
   };
+
+  const handleToggleScrap = useCallback((regionId) => {
+    setScrappedIds(prev => { const next = prev.includes(regionId) ? prev.filter(id => id !== regionId) : [...prev, regionId]; localStorage.setItem('lv_scraps', JSON.stringify(next)); return next; });
+  }, []);
+
+  const handleRequestAddToTrip = useCallback((region) => { setTripSelectRegion(region); }, []);
+
+  const handleAddToSpecificTrip = useCallback((tripId) => {
+    if (!tripSelectRegion) return;
+    const region = tripSelectRegion;
+    setMyTrips(prev => {
+      const trip = prev.find(t => t.id === tripId); if (!trip) return prev;
+      if (trip.places.some(p => p.id === region.id)) { window.alert('이미 담긴 장소예요!'); return prev; }
+      const next = prev.map(t => t.id === tripId ? { ...t, places: [...t.places, region] } : t);
+      localStorage.setItem('lv_my_trips', JSON.stringify(next)); return next;
+    });
+    setTripSelectRegion(null);
+    window.alert(`"${region.name}"을(를) 여행에 담았어요!`);
+  }, [tripSelectRegion]);
+
+  const handleCreateNewTripAndAdd = useCallback(() => {
+    if (!tripSelectRegion) return;
+    const region = tripSelectRegion;
+    const tripName = prompt('새 여행 이름을 입력하세요:', `여행 ${new Date().toLocaleDateString('ko-KR')}`);
+    if (!tripName?.trim()) return;
+    const newTrip = { id: Date.now(), name: tripName.trim(), createdAt: new Date().toISOString(), places: [region] };
+    setMyTrips(prev => { const next = [...prev, newTrip]; localStorage.setItem('lv_my_trips', JSON.stringify(next)); return next; });
+    setTripSelectRegion(null);
+    window.alert(`"${region.name}"을(를) "${tripName.trim()}"에 담았어요!`);
+  }, [tripSelectRegion]);
 
   const handleLogout = () => {
-    setAuthToken('');
-    setCurrentUser(null);
-    localStorage.removeItem('lv_access_token');
-    localStorage.removeItem('lv_user');
+    googleLogout(); localStorage.removeItem('lv_access_token'); localStorage.removeItem('lv_user');
+    window.dispatchEvent(new Event('lv-auth-changed')); setAccountPopupOpen(false);
   };
+
+  const scrappedRegions = useMemo(() => regions.filter(r => scrappedIds.includes(r.id)), [regions, scrappedIds]);
+  const currentPage = PAGE_INFO[activeTab] || PAGE_INFO.gallery;
+  const effectiveSidebarWidth = sidebarOpen ? sidebarWidth : 0;
 
   return (
     <div className="app-page">
-      <TopHeader
-        user={currentUser}
-        authToken={authToken}
-        onGoogleCredential={handleGoogleCredential}
-        onLogout={handleLogout}
-      />
+      <CommonHeader onTabChange={setActiveTab} />
+
+      {/* 사이드바 토글 — 화면 중앙 세로, 얇고 깔끔 */}
+      <button
+        type="button"
+        className="sidebar-toggle-btn"
+        style={{ left: effectiveSidebarWidth }}
+        onClick={() => setSidebarOpen(o => !o)}
+        aria-label={sidebarOpen ? '사이드바 닫기' : '사이드바 열기'}
+      >
+        {sidebarOpen ? '‹' : '›'}
+      </button>
+
       <div className="app-layout">
-        <aside className="app-sidebar" style={{ width: sidebarWidth }}>
-          <div className="sidebar-section-title">메인</div>
-          {SIDEBAR_MENU.filter(item => item.section === '메인').map(item => (
-            <button
-              key={item.id}
-              className={`sidebar-link ${activeTab === item.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(item.id)}
-              type="button"
-            >
-              {item.label}
-            </button>
-          ))}
+        {/* ── 사이드바 ── */}
+        <aside
+          className={`app-sidebar${sidebarOpen ? '' : ' collapsed'}`}
+          style={{
+            width: effectiveSidebarWidth,
+            minWidth: sidebarOpen ? SIDEBAR_WIDTH_MIN : 0,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {/* 메뉴 */}
+          <div style={{ flex: 1, overflow: 'hidden auto' }}>
+            <div className="sidebar-section-title">메인</div>
+            <button className="sidebar-link" type="button" onClick={() => navigate('/')}>🏠 시작</button>
+            <button className={`sidebar-link${activeTab === 'gallery' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('gallery')}>🗺 지역 갤러리</button>
+            <button className={`sidebar-link${activeTab === 'planner' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('planner')}>✈ 여행 플래너</button>
+            <button className={`sidebar-link${activeTab === 'mypage' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('mypage')}>👤 마이페이지</button>
 
-          <div className="sidebar-section-title">지역</div>
-          {SIDEBAR_MENU.filter(item => item.section === '지역').map(item => (
-            <div key={item.id} className="sidebar-static-link">
-              {item.label}
-            </div>
-          ))}
+            <div className="sidebar-section-title" style={{ marginTop: 14 }}>지역</div>
+            {REGION_TREE.map(r => (
+              <div key={r.id}>
+                <button className="sidebar-link" type="button" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onClick={() => setOpenRegions(prev => ({ ...prev, [r.id]: !prev[r.id] }))}>
+                  <span>📍 {r.label}</span>
+                  <span style={{ fontSize: 9, color: '#bbb', display: 'inline-block', transition: 'transform 150ms', transform: openRegions[r.id] ? 'rotate(180deg)' : 'none' }}>▼</span>
+                </button>
+                {openRegions[r.id] && (
+                  <div style={{ paddingLeft: 8 }}>
+                    {r.children.map(city => (
+                      <button key={city} className="sidebar-link" type="button" style={{ fontSize: 12, color: '#777', paddingLeft: 18 }} onClick={() => { handleGalleryVectorSearch(city); setActiveTab('gallery'); }}>
+                        {city}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
 
-          <div className="sidebar-section-title">정보</div>
-          {SIDEBAR_MENU.filter(item => item.section === '정보').map(item => (
-            <div key={item.id} className="sidebar-static-link">
-              {item.label}
-            </div>
-          ))}
+            <div className="sidebar-section-title" style={{ marginTop: 14 }}>정보</div>
+            <div className="sidebar-static-link">💡 서비스 소개</div>
+            <div className="sidebar-static-link">📬 문의하기</div>
+          </div>
+
+          {/* ── 하단 계정 영역 ── */}
+          <div className="sidebar-account-area" ref={accountAreaRef} style={{ position: 'relative' }}>
+            {/* 팝업 — 위로 열림 */}
+            {accountPopupOpen && currentUser && (
+              <div className="sidebar-account-popup">
+                <div className="sidebar-account-popup-header">
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#111', marginBottom: 1 }}>{currentUser.name || '사용자'}</div>
+                  <div className="sidebar-account-popup-email">{currentUser.email}</div>
+                </div>
+                <button type="button" className="sidebar-account-popup-item" onClick={() => { setAccountPopupOpen(false); }}>
+                  <span style={{ fontSize: 14 }}>⚙️</span> 설정
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#bbb' }}>준비중</span>
+                </button>
+                <button type="button" className="sidebar-account-popup-item" onClick={() => { setAccountPopupOpen(false); }}>
+                  <span style={{ fontSize: 14 }}>🌐</span> 언어
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#bbb' }}>준비중</span>
+                </button>
+                <button type="button" className="sidebar-account-popup-item" onClick={() => { setAccountPopupOpen(false); }}>
+                  <span style={{ fontSize: 14 }}>❓</span> 도움 받기
+                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#bbb' }}>준비중</span>
+                </button>
+                <div className="sidebar-account-popup-divider" />
+                <button type="button" className="sidebar-account-popup-item danger" onClick={handleLogout}>
+                  <span style={{ fontSize: 14 }}>🚪</span> 로그아웃
+                </button>
+              </div>
+            )}
+
+            <SidebarAccount
+              currentUser={currentUser}
+              onAccountClick={() => setAccountPopupOpen(o => !o)}
+              onLoginClick={() => navigate('/login')}
+            />
+          </div>
         </aside>
 
-        <div
-          className="app-sidebar-resizer"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="사이드바 너비 조절"
-          tabIndex={0}
-          onPointerDown={handleSidebarResizePointerDown}
-        />
+        {sidebarOpen && (
+          <div className="app-sidebar-resizer" role="separator" aria-orientation="vertical" tabIndex={0} onPointerDown={handleSidebarResizePointerDown} />
+        )}
 
+        {/* ── 메인 ── */}
         <main className="app-shell">
-          {/* Conditional Content */}
-          {activeTab === 'gallery' ? (
+          {/* 통일된 페이지 헤더 */}
+          <div className="page-header">
+            <h1 className="page-title">{currentPage.title}</h1>
+            <p className="page-subtitle">{currentPage.subtitle}</p>
+          </div>
+
+          {activeTab === 'gallery' && (
             <>
-              <h1 className="top-title">로컬 바이브</h1>
-              <p className="gallery-subtitle">
-                검색어로 Pinecone 벡터 검색만 실행합니다. 대화형 추천은 트립 플래너에서 이용해 주세요.
-              </p>
-              <GallerySearchBox
-                onSearch={handleGalleryVectorSearch}
-                busy={gallerySearchBusy}
-                placeholder="예: 해수욕장 근처 조용한 곳, 여수 야경 맛집"
-              />
+              <div className="gallery-search-center">
+                <GallerySearchBox onSearch={handleGalleryVectorSearch} busy={gallerySearchBusy} placeholder="예: 여수 야경 맛집, 조용한 감성 카페, 부산 당일치기" />
+              </div>
               <RegionGallery
                 regions={galleryDisplayRegions.slice(0, FEED_SIZE)}
                 scrappedIds={scrappedIds}
                 onToggleScrap={handleToggleScrap}
-                onSelect={region => {
-                  setSelectedRegion(region);
-                  setInsightRegion(null);
-                }}
+                onAddToTrip={handleRequestAddToTrip}
+                onSelect={region => { setSelectedRegion(region); setInsightRegion(null); }}
               />
             </>
-          ) : activeTab === 'planner' ? (
-            <TripPlannerPage regions={regions} />
-          ) : (
+          )}
+          {activeTab === 'planner' && <TripPlannerPage regions={regions} />}
+          {activeTab === 'mypage' && (
             <MyPage
               scrappedRegions={scrappedRegions}
+              myTrips={myTrips}
+              setMyTrips={(next) => { setMyTrips(next); localStorage.setItem('lv_my_trips', JSON.stringify(next)); }}
               onToggleScrap={handleToggleScrap}
-              onOpenRegion={region => {
-                setSelectedRegion(region);
-                setInsightRegion(null);
-              }}
+              onOpenRegion={region => { setSelectedRegion(region); setInsightRegion(null); }}
+              onAddToTrip={handleRequestAddToTrip}
+              regions={regions}
             />
           )}
 
           <footer className="main-footer">
             <div className="main-footer-top">
-              <div>
-                <div className="main-footer-brand">LocalVibe</div>
-                <div className="main-footer-desc">
-                  Discover real local stories with AI and data-driven insights.
-                </div>
-              </div>
-              <div className="main-footer-links">
-                <span>Core Features</span>
-                <span>Pro Experience</span>
-                <span>Contact</span>
-                <span>Join</span>
-              </div>
+              <div><div className="main-footer-brand">LocalVibe</div><div className="main-footer-desc">Discover real local stories with AI.</div></div>
+              <div className="main-footer-links"><span>Core Features</span><span>Pro Experience</span><span>Contact</span><span>Join</span></div>
             </div>
-            <div className="main-footer-bottom">
-              © 2026 LocalVibe. All rights reserved.
-            </div>
+            <div className="main-footer-bottom">© {new Date().getFullYear()} LocalVibe. All rights reserved.</div>
           </footer>
         </main>
       </div>
+
+      {/* 플로팅 챗봇 */}
+      {activeTab === 'gallery' && (
+        <>
+          {chatbotOpen && (
+            <div className="chatbot-float-panel">
+              <div className="chatbot-float-header">
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>🤖 AI 장소 추천</span>
+                <button type="button" onClick={() => setChatbotOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 15, lineHeight: 1 }}>✕</button>
+              </div>
+              <div className="chatbot-float-messages" ref={chatMessagesRef}>
+                {chatbotMessages.map((m, i) => <div key={i} className={`chatbot-float-msg ${m.role}`}>{m.text}</div>)}
+                {chatbotBusy && <div className="chatbot-float-msg assistant"><span className="chatbot-skeleton-dot" /><span className="chatbot-skeleton-dot" /><span className="chatbot-skeleton-dot" /></div>}
+              </div>
+              <form className="chatbot-float-form" onSubmit={handleChatbotSubmit}>
+                <input className="chatbot-float-input" type="text" value={chatbotInput} onChange={e => setChatbotInput(e.target.value)} placeholder="분위기 좋은 카페..." disabled={chatbotBusy} autoFocus />
+                <button type="submit" className="chatbot-float-send" disabled={chatbotBusy || !chatbotInput.trim()}>→</button>
+              </form>
+            </div>
+          )}
+          <button type="button" className="chatbot-fab" onClick={() => setChatbotOpen(o => !o)} aria-label="AI 추천">
+            {chatbotOpen ? '✕' : '🤖'}
+          </button>
+        </>
+      )}
+
+      {/* 여행 선택 모달 */}
+      {tripSelectRegion && (
+        <TripSelectModal
+          myTrips={myTrips}
+          onSelect={handleAddToSpecificTrip}
+          onCreateNew={handleCreateNewTripAndAdd}
+          onClose={() => setTripSelectRegion(null)}
+        />
+      )}
+
+      {/* 장소 모달 */}
       <RegionModal
         region={insightRegion || selectedRegion}
         isLoading={isInsightLoading}
@@ -644,13 +461,10 @@ export default function App() {
         crawlImageUrls={modalCrawlImages}
         article={modalArticle}
         articleLoading={modalArticleLoading}
-        onClose={() => {
-          setSelectedRegion(null);
-          setInsightRegion(null);
-          setModalCrawlImages([]);
-          setModalArticle(null);
-          setModalArticleLoading(false);
-        }}
+        scrappedIds={scrappedIds}
+        onToggleScrap={handleToggleScrap}
+        onAddToTrip={handleRequestAddToTrip}
+        onClose={() => { setSelectedRegion(null); setInsightRegion(null); setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(false); }}
       />
     </div>
   );
