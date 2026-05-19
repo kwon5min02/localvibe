@@ -32,16 +32,24 @@ def crawl_all_places() -> dict:
     logger.info("[crawl_batch] 전체 place 크롤링 시작")
 
     with session_scope() as session:
-        all_places = places_store.list_all_places(session)
+        all_places = [
+            {
+                "place_id": p.place_id,
+                "name": p.name or "",
+                "region": p.region or "",
+                "province": p.province or "",
+            }
+            for p in places_store.list_all_places(session)
+        ]
 
     total = len(all_places)
     success, failed = 0, 0
 
     for idx, place in enumerate(all_places, 1):
-        place_id = int(place.place_id)
-        name = place.name or ""
-        region = place.region or ""
-        province = place.province or ""
+        place_id = int(place["place_id"])
+        name = place["name"]
+        region = place["region"]
+        province = place["province"]
         region_kw = " ".join(x for x in (region, province) if x).strip()
 
         logger.info("[crawl_batch] [%d/%d] place_id=%d name=%s", idx, total, place_id, name)
