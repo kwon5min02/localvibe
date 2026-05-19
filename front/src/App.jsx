@@ -312,14 +312,6 @@ export default function App() {
       setModalArticle(null);
       setModalArticleLoading(true);
       try {
-        await fetch(`${API_BASE_URL}/api/places/${id}/crawl`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        });
-        if (cancelled) {
-          return;
-        }
         const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`);
         if (imgRes.ok) {
           const imgData = await imgRes.json();
