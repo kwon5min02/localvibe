@@ -169,8 +169,8 @@ export default function App() {
         const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`); if (imgRes.ok && !cancelled) { const d = await imgRes.json(); setModalCrawlImages((d.images || []).map(x => x.url).filter(Boolean)); }
         if (cancelled) return; const artRes = await fetch(`${API_BASE_URL}/api/places/${id}/article`); if (cancelled) return;
         if (artRes.ok) { const a = await artRes.json(); if (!cancelled) setModalArticle({ title: a.title || '', content: a.content || '' }); }
-        else if (!cancelled) setModalArticle({ title: '', content: '아티클을 불러오지 못했습니다.' });
-      } catch { if (!cancelled) setModalArticle({ title: '', content: '네트워크 오류입니다.' }); }
+        else if (!cancelled) setModalArticle(null); // 실패 시 null → 모달에서 하드코딩 아티클 표시
+      } catch { if (!cancelled) setModalArticle(null); } // 실패 시 null → 하드코딩 폴백
       finally { if (!cancelled) setModalArticleLoading(false); }
     })();
     return () => { cancelled = true; };
@@ -302,7 +302,7 @@ export default function App() {
           }}
         >
           {/* 메뉴 */}
-          <div style={{ flex: 1, overflow: 'hidden auto' }}>
+          <div className="sidebar-scroll-area">
             <div className="sidebar-section-title">메인</div>
             <button className="sidebar-link" type="button" onClick={() => navigate('/')}>🏠 시작</button>
             <button className={`sidebar-link${activeTab === 'gallery' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('gallery')}>🗺 지역 갤러리</button>
