@@ -6,6 +6,9 @@ API 서버 요청 경로와 분리: 운영 시 `LV_REGIONS_SKIP_EXTERNAL_FETCH=1
 
 실행: cd back && PYTHONPATH=. python -m app.services.data_pipeline
 
+규모: 지역별·키워드별 목록 호출 시 `pageNo` 를 올려 `KTO_MAX_ITEMS` 까지 수집
+(예: 트래픽·totalCount·중복 때문에 그만큼 못 채우면 더 적을 수 있음).
+
 동일 적재 후 검색 인덱스까지 한 번에: `PYTHONPATH=. python scripts/sync_kto_places.py`
 (MySQL만 할 때는 `sync_kto_places.py --db-only`)
 """
@@ -37,6 +40,9 @@ KTO_CONTENT_TYPE_TO_CATEGORY = {
     "39": "음식점",
     "25": "여행코스",
 }
+
+# PLACES 비적재 타입(KTO 목록 단계에서도 regions_repository 에서 필터링됨 — 이중 방어)
+KTO_PIPELINE_SKIP_CONTENTTYPE_IDS = frozenset({"15", "25"})
 
 
 def _infer_province_from_address(address: str) -> str | None:
@@ -98,7 +104,9 @@ def clean_place(raw: dict[str, Any]) -> dict[str, Any] | None:
     description = str(raw.get("summary", "")).strip() or None
     source = str(raw.get("dataSource", "")).strip() or "KTO"
 
-    ctype = str(raw.get("contentTypeId", "")).strip()
+    ctype = str(raw.get("contentTypeId", "") or "").strip()
+    if ctype in KTO_PIPELINE_SKIP_CONTENTTYPE_IDS:
+        return None
     category = KTO_CONTENT_TYPE_TO_CATEGORY.get(ctype)
     if not category:
         rb = raw.get("recommendedBusinesses")

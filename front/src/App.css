@@ -280,27 +280,6 @@ body { margin: 0; background: var(--gray-50); }
 
 .gallery-search-stack { max-width: 600px; margin: 0 0 20px; }
 
-.gallery-search-history {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.gallery-history-chip {
-  border: 1px solid var(--gray-200);
-  background: var(--white);
-  border-radius: 999px;
-  padding: 4px 12px;
-  font-size: 12px;
-  color: var(--gray-700);
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-color var(--tr-fast), color var(--tr-fast);
-}
-
-.gallery-history-chip:hover { border-color: var(--black); color: var(--black); }
-
 /* ── 갤러리 ── */
 .gallery-scroll-area { margin-bottom: 40px; }
 
