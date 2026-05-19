@@ -6,7 +6,11 @@ import RegionModal from './components/RegionModal';
 import { defaultRegions } from './data/defaultRegions';
 import TripPlannerPage from './pages/TripPlannerPage';
 import MyPage from './pages/MyPage';
+import { normalizeRegionMediaFields, resolveBackendMediaUrl } from './utils/apiMediaUrl';
 
+const DEFAULT_REGIONS_NORMALIZED = defaultRegions.map((r) =>
+  normalizeRegionMediaFields({ ...r }),
+);
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 const FEED_SIZE = 9;
@@ -60,7 +64,7 @@ function readPersistedGalleryRegions() {
     if (!Array.isArray(arr) || arr.length === 0) {
       return null;
     }
-    return arr;
+    return arr.map((r) => normalizeRegionMediaFields({ ...r }));
   } catch {
     return null;
   }
@@ -192,10 +196,10 @@ export default function App() {
       return null;
     }
   });
-  const [regions, setRegions] = useState(defaultRegions);
+  const [regions, setRegions] = useState(DEFAULT_REGIONS_NORMALIZED);
   const [displayedRegions, setDisplayedRegions] = useState(() => {
     const persisted = readPersistedGalleryRegions();
-    return persisted ?? defaultRegions;
+    return persisted ?? DEFAULT_REGIONS_NORMALIZED;
   });
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [insightRegion, setInsightRegion] = useState(null);
@@ -235,12 +239,15 @@ export default function App() {
           Array.isArray(data?.regions) &&
           data.regions.length > 0
         ) {
-          setRegions(data.regions);
+          const normalizedRegions = data.regions.map((r) =>
+            normalizeRegionMediaFields({ ...r }),
+          );
+          setRegions(normalizedRegions);
           if (
             !galleryVectorSearchActiveRef.current &&
             !isGalleryVectorFeedLocked()
           ) {
-            setDisplayedRegions(pickFeedItems(data.regions));
+            setDisplayedRegions(pickFeedItems(normalizedRegions));
           }
         }
       } catch {
@@ -249,7 +256,7 @@ export default function App() {
           !galleryVectorSearchActiveRef.current &&
           !isGalleryVectorFeedLocked()
         ) {
-          setDisplayedRegions(pickFeedItems(defaultRegions));
+          setDisplayedRegions(pickFeedItems(DEFAULT_REGIONS_NORMALIZED));
         }
       }
     }
@@ -280,7 +287,7 @@ export default function App() {
 
         const data = await response.json();
         if (isMounted && data?.region) {
-          setInsightRegion(data.region);
+          setInsightRegion(normalizeRegionMediaFields({ ...data.region }));
         }
       } catch {
         // 상세 API 실패 시에도 선택한 기본 카드 정보는 유지합니다.
@@ -315,7 +322,10 @@ export default function App() {
         const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`);
         if (imgRes.ok) {
           const imgData = await imgRes.json();
-          const urls = (imgData.images || []).map((x) => x.url).filter(Boolean);
+          const urls = (imgData.images || [])
+            .map((x) => x.url)
+            .filter(Boolean)
+            .map((u) => resolveBackendMediaUrl(u));
           if (!cancelled) {
             setModalCrawlImages(urls);
           }
@@ -449,7 +459,9 @@ export default function App() {
         }
         const data = await res.json();
         const rows = Array.isArray(data?.results) ? data.results : [];
-        const mapped = rows.map((row) => mapSearchHitToRegion(row, regionMap));
+        const mapped = rows.map((row) =>
+          normalizeRegionMediaFields(mapSearchHitToRegion(row, regionMap)),
+        );
         if (seq !== gallerySearchSeqRef.current) {
           return false;
         }

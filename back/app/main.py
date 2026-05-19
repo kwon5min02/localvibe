@@ -17,11 +17,16 @@ from app.api import (
 )
 from app.repositories.db import mysql_url_configured
 
+_BACKEND_ROOT = Path(__file__).resolve().parents[1]
+_ENV_FILE = _BACKEND_ROOT / ".env"
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """서버는 MySQL만 사용. MYSQL_URL 없으면 기동 실패."""
-    load_dotenv()
+    # cwd에 의존하지 않고 backend 루트의 .env를 읽음. IDE/풀 재시작 등에서 빈 MYSQL_URL이
+    # 이미 들어있으면 기본 load_dotenv는 덮어쓰지 않으므로 override=True로 파일을 우선.
+    load_dotenv(dotenv_path=_ENV_FILE, override=True)
     if not mysql_url_configured():
         raise RuntimeError(
             "MYSQL_URL이 .env에 없습니다. SQLite는 사용하지 않습니다. "
@@ -46,7 +51,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    static_root = Path(__file__).resolve().parents[1] / "static"
+    static_root = _BACKEND_ROOT / "static"
     static_root.mkdir(parents=True, exist_ok=True)
     api_app.mount("/static", StaticFiles(directory=str(static_root)), name="static")
 

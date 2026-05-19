@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { resolveBackendMediaUrl } from '../../utils/apiMediaUrl';
 
 export default function ComparisonTable({ items = [] }) {
   if (!items.length) {
@@ -15,9 +16,9 @@ export default function ComparisonTable({ items = [] }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: i * 0.1 }}
         >
-          {item.imageUrl && (
+          {resolveBackendMediaUrl(item.imageUrl) && (
             <img
-              src={item.imageUrl}
+              src={resolveBackendMediaUrl(item.imageUrl)}
               alt={item.name}
               className="comparison-card-img"
               onError={e => { e.target.style.display = 'none'; }}

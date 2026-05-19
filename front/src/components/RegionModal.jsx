@@ -1,4 +1,5 @@
 import KakaoMap from "./KakaoMap";
+import { resolveBackendMediaUrl } from "../utils/apiMediaUrl";
 
 function normalizeInsightValues(values = []) {
   const seen = new Set();
@@ -70,21 +71,6 @@ function toCardItems(region) {
 
 const MODAL_IMAGE_FALLBACK = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80";
 
-function resolveMediaUrl(url, apiBaseUrl) {
-  const u = String(url || "").trim();
-  if (!u) {
-    return "";
-  }
-  if (u.startsWith("http://") || u.startsWith("https://")) {
-    return u;
-  }
-  const base = String(apiBaseUrl || "").replace(/\/$/, "");
-  if (u.startsWith("/") && base) {
-    return `${base}${u}`;
-  }
-  return u;
-}
-
 export default function RegionModal({
   region,
   isLoading,
@@ -110,7 +96,10 @@ export default function RegionModal({
           닫기
         </button>
         <img
-          src={region.imageUrl || MODAL_IMAGE_FALLBACK}
+          src={
+            resolveBackendMediaUrl(region.imageUrl, apiBaseUrl) ||
+            MODAL_IMAGE_FALLBACK
+          }
           alt={region.name}
           className="modal-image"
           onError={(event) => {
@@ -137,12 +126,12 @@ export default function RegionModal({
                 <a
                   key={u}
                   className="modal-crawl-thumb-wrap"
-                  href={resolveMediaUrl(u, apiBaseUrl)}
+                  href={resolveBackendMediaUrl(u, apiBaseUrl)}
                   target="_blank"
                   rel="noreferrer"
                 >
                   <img
-                    src={resolveMediaUrl(u, apiBaseUrl)}
+                    src={resolveBackendMediaUrl(u, apiBaseUrl)}
                     alt=""
                     className="modal-crawl-thumb"
                   />

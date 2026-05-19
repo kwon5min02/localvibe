@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
+import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
 
 /**
  * Timeline Roadmap
@@ -69,7 +70,7 @@ export default function RoadMap({
       name: loc?.name ?? `Location ${index + 1}`,
       description:
         loc?.summary ?? loc?.description ?? '지역 정보가 준비 중입니다.',
-      imageUrl: loc?.imageUrl || FALLBACK_IMAGE,
+      imageUrl: resolveBackendMediaUrl(loc?.imageUrl) || FALLBACK_IMAGE,
     }));
   }, [locations]);
 

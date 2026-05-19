@@ -4,6 +4,7 @@ import TripChatPanel from '../components/TripChatPanel';
 import RegionModal from '../components/RegionModal';
 import ExportButton from '../components/ExportButton';
 import MultiMarkerMap from '../components/ui/MultiMarkerMap';
+import { normalizeRegionMediaFields } from '../utils/apiMediaUrl';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -70,7 +71,7 @@ export default function TripPlannerPage({ regions = [] }) {
 
         const data = await response.json();
         if (isMounted && data?.region) {
-          setInsightLocation(data.region);
+          setInsightLocation(normalizeRegionMediaFields({ ...data.region }));
         }
       } catch (error) {
         console.error('Failed to fetch location insight:', error);
