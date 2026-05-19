@@ -145,12 +145,13 @@ def get_or_create_article(place_id: int) -> dict[str, Any]:
             documents_store.set_pinecone_id(session, doc_id, vec_id)
 
         final_doc = documents_store.get_document_by_place_id(session, place_id)
+        final_pinecone_id = final_doc.pinecone_id if final_doc else vec_id
 
     return {
         "place_id": place_id,
         "doc_id": doc_id,
         "title": title,
         "content": content,
-        "pinecone_id": (final_doc.pinecone_id if final_doc else vec_id),
+        "pinecone_id": final_pinecone_id,
         "cached": False,
     }

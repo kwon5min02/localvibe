@@ -32,6 +32,8 @@ async def lifespan(_app: FastAPI):
 
     init_region_db()
     start_scheduler()
+    from app.services.embedding_service import _get_model
+    _get_model()
     yield
 
 

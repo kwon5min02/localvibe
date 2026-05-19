@@ -198,16 +198,26 @@ def crawl_naver_blog_for_place(
     place_id: int,
     max_results: int = 3,
     region: str = "",
+    category: str = "",
+    address: str = "",
 ) -> Tuple[str, List[str]]:
     """
     한 번의 검색으로 본문 텍스트 + 이미지(중복 source_url 제외) 수집.
-    region 은 검색 키워드 보강(예: '강릉').
+    장소명을 따옴표로 감싸 정확도를 높이고, 주소·카테고리로 보강.
     """
     crawler = _get_crawler()
     if not crawler:
         return "", []
 
-    keyword = f"{place_name} {region}".strip()
+    # 따옴표로 장소명 exact match + 주소/카테고리 보강
+    parts = [f'"{place_name}"']
+    if address:
+        parts.append(address)
+    elif region:
+        parts.append(region)
+    if category:
+        parts.append(category)
+    keyword = " ".join(parts)
     posts = crawler.search_blog(keyword, display=max_results)
     texts: List[str] = []
     serve_saved: List[str] = []

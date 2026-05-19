@@ -38,6 +38,8 @@ def crawl_all_places() -> dict:
                 "name": p.name or "",
                 "region": p.region or "",
                 "province": p.province or "",
+                "category": p.category or "",
+                "address": p.address or "",
             }
             for p in places_store.list_all_places(session)
         ]
@@ -50,6 +52,8 @@ def crawl_all_places() -> dict:
         name = place["name"]
         region = place["region"]
         province = place["province"]
+        category = place["category"]
+        address = place["address"]
         region_kw = " ".join(x for x in (region, province) if x).strip()
 
         logger.info("[crawl_batch] [%d/%d] place_id=%d name=%s", idx, total, place_id, name)
@@ -70,6 +74,8 @@ def crawl_all_places() -> dict:
                 place_id=place_id,
                 max_results=int(os.getenv("NAVER_BLOG_MAX_RESULTS", "3")),
                 region=region_kw,
+                category=category,
+                address=address,
             )
 
             logger.info(
