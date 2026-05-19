@@ -1,3 +1,5 @@
+import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
+
 const CARD_IMAGE_FALLBACK = "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=900&q=80";
 const SUMMARY_FALLBACK = '광주·전남 추천 스팟 정보를 확인해보세요.';
 
@@ -66,7 +68,7 @@ export default function RegionGallery({ regions, onSelect, scrappedIds = [], onT
                 {scrappedIds.includes(region.id) ? '♥' : '♡'}
               </button>
               <img
-                src={region.imageUrl}
+                src={resolveBackendMediaUrl(region.imageUrl) || CARD_IMAGE_FALLBACK}
                 alt={region.name}
                 className="region-image"
                 loading="lazy"
