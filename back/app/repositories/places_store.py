@@ -37,6 +37,9 @@ class Place(Base):
     crawled_images: Mapped[list["CrawledImage"]] = relationship(
         "CrawledImage", back_populates="place", cascade="all, delete-orphan"
     )
+    crawled_texts: Mapped[list["CrawledText"]] = relationship(
+        "CrawledText", back_populates="place", cascade="all, delete-orphan"
+    )
 
 
 class CrawledImage(Base):
@@ -50,6 +53,23 @@ class CrawledImage(Base):
     crawled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     place: Mapped[Place] = relationship("Place", back_populates="crawled_images")
+
+
+class CrawledText(Base):
+    __tablename__ = "crawled_texts"
+
+    text_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    place_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("places.place_id", ondelete="CASCADE"), nullable=False, index=True)
+    blog_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    blog_title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    blogger_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    post_date: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_length: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    crawled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    place: Mapped[Place] = relationship("Place", back_populates="crawled_texts")
 
 
 def _normalize_https_image_url(raw: object) -> str:
@@ -501,3 +521,57 @@ def list_crawled_images_for_place(session, place_id: int) -> list[CrawledImage]:
 
 def list_all_places(session) -> list[Place]:
     return list(session.execute(select(Place).order_by(Place.place_id.asc())).scalars().all())
+
+
+# ── CrawledText CRUD ──────────────────────────────────────────────────────────
+
+def add_crawled_text(session, *, place_id: int, blog_data: dict) -> CrawledText:
+    row = CrawledText(
+        place_id=place_id,
+        blog_url=blog_data.get("blog_url"),
+        blog_title=blog_data.get("blog_title"),
+        blogger_name=blog_data.get("blogger_name"),
+        post_date=blog_data.get("post_date"),
+        description=blog_data.get("description"),
+        content=blog_data.get("content"),
+        content_length=blog_data.get("content_length"),
+        crawled_at=datetime.utcnow(),
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def crawled_text_exists(session, *, place_id: int, blog_url: str | None) -> bool:
+    if not blog_url:
+        return False
+    stmt = (
+        select(CrawledText.text_id)
+        .where(CrawledText.place_id == place_id, CrawledText.blog_url == blog_url)
+        .limit(1)
+    )
+    return session.execute(stmt).scalar_one_or_none() is not None
+
+
+def list_crawled_texts_for_place(session, place_id: int) -> list[CrawledText]:
+    stmt = (
+        select(CrawledText)
+        .where(CrawledText.place_id == place_id)
+        .order_by(CrawledText.text_id.asc())
+    )
+    return list(session.execute(stmt).scalars().all())
+
+
+def clear_crawled_data_for_place(session, place_id: int) -> dict[str, int]:
+    """갱신 주기 시 사용: place_id에 속한 텍스트·이미지 행 삭제 후 재크롤링 가능 상태로 만듦.
+    이미지 파일 삭제는 호출자 책임.
+    """
+    from sqlalchemy import delete
+
+    txt_result = session.execute(delete(CrawledText).where(CrawledText.place_id == place_id))
+    img_result = session.execute(delete(CrawledImage).where(CrawledImage.place_id == place_id))
+    session.flush()
+    return {
+        "deleted_texts": txt_result.rowcount,
+        "deleted_images": img_result.rowcount,
+    }
