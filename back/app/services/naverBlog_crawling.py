@@ -219,7 +219,7 @@ def crawl_naver_blog_for_place(
 
     for post in posts:
         link = post.get("link") or ""
-        if not link:
+        if not link or "blog.naver.com" not in link:
             time.sleep(0.25)
             continue
 
