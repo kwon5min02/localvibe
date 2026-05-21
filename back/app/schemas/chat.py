@@ -33,3 +33,5 @@ class TripChatRequest(BaseModel):
 class TripChatResponse(BaseModel):
     answer: str
     recommendedRegionIds: list[int]
+    detectedAction: Optional[str] = None
+    excludedLocationId: Optional[int] = None

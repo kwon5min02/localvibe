@@ -304,9 +304,9 @@ async function callVisualAction(payload) {
   return response.json();
 }
 
-const HELP_TEXT = `📋 사용 가능한 기능을 알려드릴게요!
+const HELP_TEXT = `사용 가능한 기능을 알려드릴게요!
 
-🗺️ 장소 추천 & 일정 관리
+장소 추천 & 일정 관리
 • "[지역] [테마] 추천해줘" → 로드맵에 장소 추가
 • "[N]일" / "[N]박 [N]일" → 여행 기간 설정
 • "[N]일 더 추가해줘" → 기간 연장
@@ -314,9 +314,7 @@ const HELP_TEXT = `📋 사용 가능한 기능을 알려드릴게요!
 • "[장소명] 말고 다른 곳으로 바꿔줘" → 장소 교체
 • "코스 다시 짜줘" / "장소 교체해서 보여줘" → 말한 조건으로 로드맵 전체 새로 구성
 
-• "방금 추천한 카페 둘 비교해줘" / "저 공원 지도로 보여줘" → 최근 대화·로드맵 맥락으로 시각화 (비교·지도)
-
-🖼️ 시각화
+시각화
 • "[장소A] vs [장소B] 비교해줘" → 두 장소 비교 카드 팝업
 • "[테마] 사진 보고 싶어" → 이미지 갤러리 팝업
 • "지도 보여줘" → 현재 일정 전체 마커 지도 팝업`;
@@ -367,7 +365,7 @@ const ACTION_LABEL_MAP = {
  */
 const INITIAL_MESSAGE = {
   role: 'assistant',
-  text: '🗺️ 먼저 여행 기간을 알려주세요! 예: 2박 3일, 3일, 1박',
+  text: '먼저 여행 기간을 알려주세요! 예: 2박 3일, 3일, 1박',
 };
 
 function TripChatPanelInner({
@@ -418,13 +416,7 @@ function TripChatPanelInner({
       // Locations added
       const addedCount = currentLocations.length - lastLocationCount;
       const summaryText =
-        addedCount === 1
-          ? `✅ 장소가 추가되었습니다!\n\n📍 현재 로드맵:\n${currentLocations
-              .map((loc, i) => `${i + 1}. ${loc.name}`)
-              .join('\n')}`
-          : `✅ ${addedCount}개의 장소가 추가되었습니다!\n\n📍 현재 로드맵:\n${currentLocations
-              .map((loc, i) => `${i + 1}. ${loc.name}`)
-              .join('\n')}`;
+        addedCount === 1 ? '장소를 추가했어요.' : `${addedCount}개 장소를 추가했어요.`;
 
       setMessages(prev => [
         ...prev,
@@ -438,10 +430,8 @@ function TripChatPanelInner({
       const removedCount = lastLocationCount - currentLocations.length;
       const summaryText =
         currentLocations.length === 0
-          ? '🗑️ 모든 장소가 제거되었습니다.'
-          : `🗑️ ${removedCount}개의 장소가 제거되었습니다!\n\n📍 남은 로드맵:\n${currentLocations
-              .map((loc, i) => `${i + 1}. ${loc.name}`)
-              .join('\n')}`;
+          ? '모든 장소를 제거했어요.'
+          : `${removedCount}개 장소를 제거했어요.`;
 
       setMessages(prev => [
         ...prev,
@@ -596,7 +586,9 @@ function TripChatPanelInner({
           text:
             incrementedDuration && !parsedDuration
               ? `일정을 업데이트했어요! ${resolvedDuration.nights}박 ${resolvedDuration.days}일 기준으로 최대 ${resolvedDuration.maxLocations}개 장소까지 추천해드릴게요.`
-              : `좋아요! ${resolvedDuration.nights}박 ${resolvedDuration.days}일 기준으로 최대 ${resolvedDuration.maxLocations}개 장소까지 추천해드릴게요. 이제 가고 싶은 지역이나 테마를 알려주세요.`,
+              : isDurationOnlyMessage(trimmed)
+                ? `좋아요! ${resolvedDuration.nights}박 ${resolvedDuration.days}일 기준으로 최대 ${resolvedDuration.maxLocations}개 장소까지 추천해드릴게요. 이제 가고 싶은 지역이나 테마를 알려주세요.`
+                : `좋아요! ${resolvedDuration.nights}박 ${resolvedDuration.days}일 기준으로 최대 ${resolvedDuration.maxLocations}개 장소까지 추천해드릴게요.`,
         },
       ]);
 
@@ -787,6 +779,44 @@ function TripChatPanelInner({
         return;
       }
 
+      // 백엔드 AI가 exclude 액션으로 판단한 경우 → 장소 교체 처리
+      if (
+        data?.detectedAction === 'exclude' &&
+        data?.excludedLocationId &&
+        Array.isArray(data?.recommendedRegionIds) &&
+        data.recommendedRegionIds.length > 0
+      ) {
+        const oldId = data.excludedLocationId;
+        const currentRoadmapIds = new Set(currentLocations.map(loc => loc.id));
+        const newId = data.recommendedRegionIds[0];
+
+        if (!currentRoadmapIds.has(oldId)) {
+          // 현재 로드맵에 없는 장소를 제외 요청한 경우
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              text: '현재 일정에 없는 장소예요. 로드맵에 있는 장소 이름을 말씀해 주세요.',
+            },
+          ]);
+        } else if (newId && newId !== oldId) {
+          onReplaceLocation?.(oldId, newId);
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              text: '장소를 교체했어요.',
+            },
+          ]);
+        } else {
+          setMessages(prev => [
+            ...prev,
+            { role: 'assistant', text: '대체할 장소를 찾지 못했어요. 다시 시도해 주세요.' },
+          ]);
+        }
+        return;
+      }
+
       // Handle recommended region IDs - these get added to the roadmap
       if (
         Array.isArray(data?.recommendedRegionIds) &&
@@ -898,23 +928,13 @@ function TripChatPanelInner({
 
   return (
     <section className="trip-chat-panel">
-      <h2 className="trip-chat-title">🤖 로드맵 편집 챗봇</h2>
+      <h2 className="trip-chat-title">로드맵 편집 챗봇</h2>
 
       {/* Current locations info */}
       {currentLocations.length > 0 && (
         <div className="trip-chat-info">
           <span className="info-label">
             현재 {currentLocations.length}개 장소
-          </span>
-          <span className="info-icons">
-            {currentLocations.slice(0, 3).map(loc => (
-              <span key={loc.id} title={loc.name}>
-                📍
-              </span>
-            ))}
-            {currentLocations.length > 3 && (
-              <span>+{currentLocations.length - 3}</span>
-            )}
           </span>
         </div>
       )}
@@ -937,9 +957,6 @@ function TripChatPanelInner({
               delay: message.role === 'assistant' ? ASSISTANT_MESSAGE_DELAY : 0,
             }}
           >
-            {message.role === 'assistant' && (
-              <span className="chat-icon">🤖</span>
-            )}
             {message.text}
             {message.componentType &&
               ACTION_COMPONENT_MAP[message.componentType] && (
@@ -971,8 +988,9 @@ function TripChatPanelInner({
               delay: LOADING_INDICATOR_DELAY,
             }}
           >
-            <span className="chat-icon">🤖</span>
-            응답 생성 중...
+            <span className="chatbot-skeleton-dot" />
+            <span className="chatbot-skeleton-dot" />
+            <span className="chatbot-skeleton-dot" />
           </motion.div>
         )}
       </div>
@@ -1017,7 +1035,7 @@ function TripChatPanelInner({
           disabled={isLoading}
         />
         <button className="trip-chat-send" type="submit" disabled={isLoading}>
-          {isLoading ? '⏳' : '✈️'}
+          →
         </button>
       </form>
     </section>

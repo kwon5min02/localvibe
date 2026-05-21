@@ -1439,6 +1439,102 @@ def _build_trip_spot_context(rows_subset: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _find_location_id_by_name(name: str, rows: list[dict]) -> Optional[int]:
+    """장소 이름(문자열)을 location ID로 매핑. 정확 매칭 → 부분 매칭 순서."""
+    if not name:
+        return None
+    name_stripped = name.strip()
+    for row in rows:
+        if row.get("name", "") == name_stripped:
+            return int(row["id"])
+    for row in rows:
+        if name_stripped in row.get("name", "") or row.get("name", "") in name_stripped:
+            return int(row["id"])
+    return None
+
+
+def _detect_trip_action(
+    user_message: str,
+    current_location_ids: list[int],
+    rows: list[dict],
+    api_key: Optional[str],
+) -> dict:
+    """OpenAI function calling으로 사용자 메시지를 분석해 어떤 액션을 수행할지 결정한다."""
+    fallback = {"action": "recommend", "exclude_location_name": None}
+    if not api_key:
+        return fallback
+
+    current_names = []
+    row_by_id = {int(r["id"]): r for r in rows}
+    for loc_id in (current_location_ids or []):
+        row = row_by_id.get(loc_id)
+        if row:
+            current_names.append(row.get("name", ""))
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "route_action",
+                "description": "사용자의 여행 계획 채팅 메시지를 분석해 수행할 액션을 결정한다.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["recommend", "replan", "exclude", "add_preference"],
+                            "description": (
+                                "recommend: 새 여행 추천 또는 추가 추천 요청. "
+                                "replan: 기존 일정을 완전히 버리고 처음부터 새로 계획. "
+                                "exclude: 현재 일정의 특정 장소를 제외하고 다른 장소로 교체. "
+                                "add_preference: 현재 일정을 유지하되 분위기·조건 등 선호도 변경."
+                            ),
+                        },
+                        "exclude_location_name": {
+                            "type": "string",
+                            "description": "action이 exclude일 때, 제외할 장소의 이름. 현재 일정에 없는 장소면 null.",
+                        },
+                    },
+                    "required": ["action"],
+                },
+            },
+        }
+    ]
+
+    system_msg = (
+        "당신은 여행 계획 어시스턴트입니다. "
+        "사용자의 메시지를 분석해 route_action 함수를 반드시 호출하세요. "
+        "현재 일정에 있는 장소 목록이 제공됩니다."
+    )
+    user_msg = user_message
+    if current_names:
+        user_msg += f"\n\n[현재 일정 장소: {', '.join(current_names)}]"
+
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0,
+            tools=tools,
+            tool_choice={"type": "function", "function": {"name": "route_action"}},
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+        )
+        tool_call = response.choices[0].message.tool_calls[0]
+        args = json.loads(tool_call.function.arguments)
+        result = {
+            "action": args.get("action", "recommend"),
+            "exclude_location_name": args.get("exclude_location_name"),
+        }
+        logger.info(f"[action_routing] 사용자 메시지='{user_message}' → 액션={result}")
+        return result
+    except Exception as e:
+        logger.warning(f"[action_routing] 액션 판단 실패 ({e}), fallback=recommend")
+        return fallback
+
+
 def get_trip_chat_result(
     user_message: str,
     trip_duration: dict,
@@ -1452,6 +1548,23 @@ def get_trip_chat_result(
     model = "gpt-4o-mini"
     rows = load_regions()
     valid_region_ids = {int(row["id"]) for row in rows}
+
+    # 명시적 플래그가 없을 때만 AI로 액션을 판단한다.
+    ai_detected_action: str = "recommend"
+    ai_excluded_id: Optional[int] = None
+    if not replan and exclude_location_id is None:
+        action_result = _detect_trip_action(user_message, current_location_ids or [], rows, api_key)
+        ai_action = action_result["action"]
+        ai_detected_action = ai_action
+        if ai_action == "replan":
+            replan = True
+        elif ai_action == "exclude":
+            loc_name = action_result.get("exclude_location_name")
+            if loc_name:
+                matched = _find_location_id_by_name(loc_name, rows)
+                if matched:
+                    exclude_location_id = matched
+                    ai_excluded_id = matched
 
     if replan:
         # 전체 재계획: 기존 로드맵·교체 대상 제외는 쓰지 않고 후보부터 다시 짠다.
@@ -1519,6 +1632,8 @@ def get_trip_chat_result(
         return {
             "answer": "추천 장소를 조회했습니다.",
             "recommendedRegionIds": recommended_ids,
+            "detectedAction": ai_detected_action,
+            "excludedLocationId": ai_excluded_id,
         }
 
     client = OpenAI(api_key=api_key)
@@ -1613,7 +1728,12 @@ def get_trip_chat_result(
         answer = llm_answer.strip() or _trip_answer_from_ids(ids, rows)
 
         # OpenAI 답변만 그대로 반환 (자동 메시지 X)
-        return {"answer": answer, "recommendedRegionIds": ids}
+        return {
+            "answer": answer,
+            "recommendedRegionIds": ids,
+            "detectedAction": ai_detected_action,
+            "excludedLocationId": ai_excluded_id,
+        }
     except Exception:
         logger.exception(
             "[CHAT] get_trip_chat_result failed message=%s nights=%s days=%s",
@@ -1624,4 +1744,6 @@ def get_trip_chat_result(
         return {
             "answer": "추천을 처리하는 중 오류가 발생했습니다.",
             "recommendedRegionIds": recommended_ids,
+            "detectedAction": ai_detected_action,
+            "excludedLocationId": ai_excluded_id,
         }
