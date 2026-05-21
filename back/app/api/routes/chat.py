@@ -19,9 +19,10 @@ def chat(payload: ChatRequest):
 
 @router.post("/trip", response_model=TripChatResponse)
 def trip_chat(payload: TripChatRequest):
+    duration = {"nights": payload.tripDuration.nights, "days": payload.tripDuration.days} if payload.tripDuration else {"nights": 0, "days": 1}
     return get_trip_chat_result(
         payload.message,
-        {"nights": payload.tripDuration.nights, "days": payload.tripDuration.days},
+        duration,
         payload.currentLocationIds or [],
         payload.excludeLocationId,
         replan=bool(payload.replan),

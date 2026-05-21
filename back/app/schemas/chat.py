@@ -23,10 +23,9 @@ class TripDuration(BaseModel):
 
 class TripChatRequest(BaseModel):
     message: str
-    tripDuration: TripDuration
+    tripDuration: Optional[TripDuration] = None
     currentLocationIds: Optional[list[int]] = None
     excludeLocationId: Optional[int] = None
-    # True: 기존 로드맵 무시, 전체 코스 재추천 (백엔드 후보·GPT 전면 교체)
     replan: Optional[bool] = False
 
 
@@ -35,3 +34,4 @@ class TripChatResponse(BaseModel):
     recommendedRegionIds: list[int]
     detectedAction: Optional[str] = None
     excludedLocationId: Optional[int] = None
+    detectedDuration: Optional[dict] = None

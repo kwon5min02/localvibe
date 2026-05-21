@@ -1458,9 +1458,10 @@ def _detect_trip_action(
     current_location_ids: list[int],
     rows: list[dict],
     api_key: Optional[str],
+    current_trip_duration: Optional[dict] = None,
 ) -> dict:
-    """OpenAI function calling으로 사용자 메시지를 분석해 어떤 액션을 수행할지 결정한다."""
-    fallback = {"action": "recommend", "exclude_location_name": None}
+    """OpenAI function calling으로 사용자 메시지를 분석해 액션·기간·지역을 감지한다."""
+    fallback = {"action": "recommend", "exclude_location_name": None, "detected_duration": None}
     if not api_key:
         return fallback
 
@@ -1476,23 +1477,41 @@ def _detect_trip_action(
             "type": "function",
             "function": {
                 "name": "route_action",
-                "description": "사용자의 여행 계획 채팅 메시지를 분석해 수행할 액션을 결정한다.",
+                "description": "사용자의 여행 계획 채팅 메시지를 분석해 수행할 액션과 여행 기간을 결정한다.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["recommend", "replan", "exclude", "add_preference"],
+                            "enum": ["recommend", "replan", "remove", "replace", "add_preference", "unsupported"],
                             "description": (
                                 "recommend: 새 여행 추천 또는 추가 추천 요청. "
-                                "replan: 기존 일정을 완전히 버리고 처음부터 새로 계획. "
-                                "exclude: 현재 일정의 특정 장소를 제외하고 다른 장소로 교체. "
-                                "add_preference: 현재 일정을 유지하되 분위기·조건 등 선호도 변경."
+                                "replan: 기존 일정을 완전히 버리고 처음부터 새로 계획 (지역·기간 변경 포함). "
+                                "remove: 현재 일정에서 특정 장소를 삭제만 함 (대체 없음). '빼줘', '제외해줘', '싫어', '별로야' 등. "
+                                "replace: 현재 일정의 특정 장소를 다른 장소로 교체. '바꿔줘', '교체해줘', '말고 다른 곳' 등. "
+                                "add_preference: 현재 일정을 유지하되 분위기·조건 등 선호도 변경. "
+                                "unsupported: 날씨·교통·가격·예약·영업시간 등 여행 장소 추천과 무관한 요청."
                             ),
+                        },
+                        "target_location_name": {
+                            "type": "string",
+                            "description": "remove 또는 replace일 때, 대상 장소의 이름. 해당 없으면 null.",
+                        },
+                        "unsupported_reason": {
+                            "type": "string",
+                            "description": "action이 unsupported일 때, 사용자에게 전달할 짧은 안내 메시지.",
                         },
                         "exclude_location_name": {
                             "type": "string",
-                            "description": "action이 exclude일 때, 제외할 장소의 이름. 현재 일정에 없는 장소면 null.",
+                            "description": "action이 exclude일 때, 제외할 장소의 이름. 해당 없으면 null.",
+                        },
+                        "detected_nights": {
+                            "type": "integer",
+                            "description": "메시지에서 감지된 숙박 수. '당일'·'1일'이면 0, '1박2일'이면 1. 기간 언급 없으면 null.",
+                        },
+                        "detected_days": {
+                            "type": "integer",
+                            "description": "메시지에서 감지된 총 일수. '1일'·'당일'이면 1, '1박2일'이면 2. 기간 언급 없으면 null.",
                         },
                     },
                     "required": ["action"],
@@ -1501,14 +1520,21 @@ def _detect_trip_action(
         }
     ]
 
+    duration_ctx = ""
+    if current_trip_duration:
+        duration_ctx = f"[현재 설정된 여행 기간: {current_trip_duration.get('nights', 0)}박 {current_trip_duration.get('days', 1)}일]"
+
     system_msg = (
         "당신은 여행 계획 어시스턴트입니다. "
         "사용자의 메시지를 분석해 route_action 함수를 반드시 호출하세요. "
-        "현재 일정에 있는 장소 목록이 제공됩니다."
+        "지역이나 기간이 바뀌는 요청은 replan으로 판단하세요. "
+        "현재 일정 장소 목록과 현재 여행 기간이 제공됩니다."
     )
     user_msg = user_message
+    if duration_ctx:
+        user_msg += f"\n\n{duration_ctx}"
     if current_names:
-        user_msg += f"\n\n[현재 일정 장소: {', '.join(current_names)}]"
+        user_msg += f"\n[현재 일정 장소: {', '.join(current_names)}]"
 
     try:
         client = OpenAI(api_key=api_key)
@@ -1524,11 +1550,25 @@ def _detect_trip_action(
         )
         tool_call = response.choices[0].message.tool_calls[0]
         args = json.loads(tool_call.function.arguments)
+
+        detected_nights = args.get("detected_nights")
+        detected_days = args.get("detected_days")
+        detected_duration = None
+        if detected_nights is not None and detected_days is not None:
+            max_locations = max(1, int(detected_days) * TRIP_ITEMS_PER_DAY)
+            detected_duration = {
+                "nights": int(detected_nights),
+                "days": int(detected_days),
+                "maxLocations": max_locations,
+            }
+
         result = {
             "action": args.get("action", "recommend"),
-            "exclude_location_name": args.get("exclude_location_name"),
+            "target_location_name": args.get("target_location_name"),
+            "detected_duration": detected_duration,
+            "unsupported_reason": args.get("unsupported_reason"),
         }
-        logger.info(f"[action_routing] 사용자 메시지='{user_message}' → 액션={result}")
+        logger.info(f"[action_routing] 사용자 메시지='{user_message}' → {result}")
         return result
     except Exception as e:
         logger.warning(f"[action_routing] 액션 판단 실패 ({e}), fallback=recommend")
@@ -1549,17 +1589,50 @@ def get_trip_chat_result(
     rows = load_regions()
     valid_region_ids = {int(row["id"]) for row in rows}
 
-    # 명시적 플래그가 없을 때만 AI로 액션을 판단한다.
+    # AI로 액션·기간을 판단한다.
     ai_detected_action: str = "recommend"
     ai_excluded_id: Optional[int] = None
+    ai_detected_duration: Optional[dict] = None
     if not replan and exclude_location_id is None:
-        action_result = _detect_trip_action(user_message, current_location_ids or [], rows, api_key)
+        action_result = _detect_trip_action(
+            user_message, current_location_ids or [], rows, api_key,
+            current_trip_duration=trip_duration,
+        )
         ai_action = action_result["action"]
         ai_detected_action = ai_action
-        if ai_action == "replan":
+        ai_detected_duration = action_result.get("detected_duration")
+
+        # 기간이 감지되면 trip_duration 업데이트
+        if ai_detected_duration:
+            trip_duration = {
+                "nights": ai_detected_duration["nights"],
+                "days": ai_detected_duration["days"],
+            }
+
+        loc_name = action_result.get("target_location_name")
+
+        if ai_action == "unsupported":
+            reason = action_result.get("unsupported_reason") or "장소 추천이나 일정 관련 질문을 해주세요!"
+            return {
+                "answer": reason,
+                "recommendedRegionIds": [],
+                "detectedAction": "unsupported",
+                "excludedLocationId": None,
+                "detectedDuration": None,
+            }
+        elif ai_action == "remove":
+            # 삭제만: 후보 검색 없이 대상 ID만 반환
+            matched = _find_location_id_by_name(loc_name, rows) if loc_name else None
+            return {
+                "answer": "",
+                "recommendedRegionIds": [],
+                "detectedAction": "remove",
+                "excludedLocationId": matched,
+                "detectedDuration": ai_detected_duration,
+            }
+        elif ai_action == "replan":
             replan = True
-        elif ai_action == "exclude":
-            loc_name = action_result.get("exclude_location_name")
+        elif ai_action == "replace":
             if loc_name:
                 matched = _find_location_id_by_name(loc_name, rows)
                 if matched:
@@ -1617,6 +1690,9 @@ def get_trip_chat_result(
                 "지역명을 조금 바꾸거나, 아직 데이터에 없는 지역일 수 있습니다."
             ),
             "recommendedRegionIds": [],
+            "detectedAction": ai_detected_action,
+            "excludedLocationId": ai_excluded_id,
+            "detectedDuration": ai_detected_duration,
         }
 
     recommended_ids = _normalize_trip_recommended_ids(
@@ -1634,6 +1710,7 @@ def get_trip_chat_result(
             "recommendedRegionIds": recommended_ids,
             "detectedAction": ai_detected_action,
             "excludedLocationId": ai_excluded_id,
+            "detectedDuration": ai_detected_duration,
         }
 
     client = OpenAI(api_key=api_key)
@@ -1733,6 +1810,7 @@ def get_trip_chat_result(
             "recommendedRegionIds": ids,
             "detectedAction": ai_detected_action,
             "excludedLocationId": ai_excluded_id,
+            "detectedDuration": ai_detected_duration,
         }
     except Exception:
         logger.exception(
@@ -1746,4 +1824,5 @@ def get_trip_chat_result(
             "recommendedRegionIds": recommended_ids,
             "detectedAction": ai_detected_action,
             "excludedLocationId": ai_excluded_id,
+            "detectedDuration": ai_detected_duration,
         }
