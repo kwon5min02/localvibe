@@ -3,8 +3,7 @@ import RoadMap from '../components/RoadMap';
 import TripChatPanel from '../components/TripChatPanel';
 import RegionModal from '../components/RegionModal';
 import ExportButton from '../components/ExportButton';
-import MultiMarkerMap from '../components/ui/MultiMarkerMap';
-import { normalizeRegionMediaFields } from '../utils/apiMediaUrl';
+import { normalizeRegionMediaFields, resolveBackendMediaUrl } from '../utils/apiMediaUrl';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -23,6 +22,12 @@ export default function TripPlannerPage({ regions = [] }) {
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [insightLocation, setInsightLocation] = useState(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
+  const [modalCrawlImages, setModalCrawlImages] = useState([]);
+  const [modalArticle, setModalArticle] = useState(null);
+  const [modalArticleLoading, setModalArticleLoading] = useState(false);
+  const [scrappedIds, setScrappedIds] = useState(() => {
+    try { const p = JSON.parse(localStorage.getItem('lv_scraps') || '[]'); return Array.isArray(p) ? p : []; } catch { return []; }
+  });
 
   // Create a map of region ID -> full region data for quick lookup
   const regionMap = useMemo(() => {
@@ -88,6 +93,37 @@ export default function TripPlannerPage({ regions = [] }) {
       isMounted = false;
     };
   }, [selectedLocation]);
+
+  // 크롤 이미지 & 아티클 fetch
+  useEffect(() => {
+    const id = selectedLocation?.id;
+    if (!id) { setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(false); return; }
+    let cancelled = false;
+    setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(true);
+    (async () => {
+      try {
+        await fetch(`${API_BASE_URL}/api/places/${id}/crawl`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        if (cancelled) return;
+        const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`);
+        if (imgRes.ok && !cancelled) { const d = await imgRes.json(); setModalCrawlImages((d.images || []).map(x => x.url).filter(Boolean).map(u => resolveBackendMediaUrl(u))); }
+        if (cancelled) return;
+        const artRes = await fetch(`${API_BASE_URL}/api/places/${id}/article`);
+        if (cancelled) return;
+        if (artRes.ok) { const a = await artRes.json(); if (!cancelled) setModalArticle({ title: a.title || '', content: a.content || '' }); }
+        else if (!cancelled) setModalArticle(null);
+      } catch { if (!cancelled) setModalArticle(null); }
+      finally { if (!cancelled) setModalArticleLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [selectedLocation?.id]);
+
+  const handleToggleScrap = (regionId) => {
+    setScrappedIds(prev => {
+      const next = prev.includes(regionId) ? prev.filter(id => id !== regionId) : [...prev, regionId];
+      localStorage.setItem('lv_scraps', JSON.stringify(next));
+      return next;
+    });
+  };
 
   /**
    * Handle location replacement in roadmap
@@ -271,16 +307,6 @@ export default function TripPlannerPage({ regions = [] }) {
               />
             )}
 
-            {roadmapLocations.length > 0 && (
-              <section
-                className="trip-planner-route-map"
-                aria-label="일정 전체 지도"
-              >
-                <h3 className="trip-planner-route-map-title">일정 지도</h3>
-                <MultiMarkerMap locations={roadmapLocations} />
-              </section>
-            )}
-
             {/* Export buttons */}
             <ExportButton roadmapLocations={roadmapLocations} />
           </div>
@@ -305,9 +331,17 @@ export default function TripPlannerPage({ regions = [] }) {
         region={modalRegion}
         isLoading={isInsightLoading}
         apiBaseUrl={API_BASE_URL}
+        crawlImageUrls={modalCrawlImages}
+        article={modalArticle}
+        articleLoading={modalArticleLoading}
+        scrappedIds={scrappedIds}
+        onToggleScrap={handleToggleScrap}
         onClose={() => {
           setSelectedLocation(null);
           setInsightLocation(null);
+          setModalCrawlImages([]);
+          setModalArticle(null);
+          setModalArticleLoading(false);
         }}
       />
     </div>
