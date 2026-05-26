@@ -19,8 +19,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 CRAWL_INTERVAL_WEEKS = int(os.getenv("CRAWL_INTERVAL_WEEKS", "2"))
-# place 간 딜레이 (초) — 네이버 API 호출 제한 방어
-PLACE_DELAY_SECONDS = float(os.getenv("CRAWL_PLACE_DELAY", "3"))
+# place 간 딜레이 (초) — 네이버 검색·블로그 HTML 요청 과다 시 429 등 방어 (.env: CRAWL_PLACE_DELAY)
+PLACE_DELAY_SECONDS = float(os.getenv("CRAWL_PLACE_DELAY", "2"))
 
 
 def crawl_all_places() -> dict:

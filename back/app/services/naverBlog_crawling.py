@@ -202,8 +202,8 @@ def crawl_naver_blog_for_place(
     address: str = "",
 ) -> Tuple[str, List[str]]:
     """
-    한 번의 검색으로 본문 텍스트 + 이미지(중복 source_url 제외) 수집.
-    장소명을 따옴표로 감싸 정확도를 높이고, 주소·카테고리로 보강.
+    한 장소: 네이버 검색 → 포스트 URL별 본문 텍스트 수집 및 DB 저장.
+    (이미지 수집 코드는 유지하되 아래 루프를 주석 처리해 비활성화 — 재사용 시 주석 해제.)
     """
     crawler = _get_crawler()
     if not crawler:
@@ -251,25 +251,26 @@ def crawl_naver_blog_for_place(
                 if not places_store.crawled_text_exists(session, place_id=place_id, blog_url=link):
                     places_store.add_crawled_text(session, place_id=place_id, blog_data=blog_data)
 
-        for img_url in crawler.extract_blog_images(link, max_images=6)[:3]:
-            meta = crawler.download_image(img_url, place_id)
-            if not meta:
-                continue
-            if use_db:
-                with session_scope() as session:
-                    if places_store.crawled_image_exists(
-                        session, place_id=place_id, source_url=meta["source_url"]
-                    ):
-                        serve_saved.append(meta["serve_url"])
-                        continue
-                    places_store.add_crawled_image(
-                        session,
-                        place_id=place_id,
-                        source_url=meta["source_url"],
-                        local_path=meta["local_path"],
-                        serve_url=meta["serve_url"],
-                    )
-            serve_saved.append(meta["serve_url"])
+        # 블로그 이미지 수집 비활성화 (필요 시 아래 for 블록 주석 해제)
+        # for img_url in crawler.extract_blog_images(link, max_images=6)[:3]:
+        #     meta = crawler.download_image(img_url, place_id)
+        #     if not meta:
+        #         continue
+        #     if use_db:
+        #         with session_scope() as session:
+        #             if places_store.crawled_image_exists(
+        #                 session, place_id=place_id, source_url=meta["source_url"]
+        #             ):
+        #                 serve_saved.append(meta["serve_url"])
+        #                 continue
+        #             places_store.add_crawled_image(
+        #                 session,
+        #                 place_id=place_id,
+        #                 source_url=meta["source_url"],
+        #                 local_path=meta["local_path"],
+        #                 serve_url=meta["serve_url"],
+        #             )
+        #     serve_saved.append(meta["serve_url"])
 
         time.sleep(0.35)
 
