@@ -11,6 +11,7 @@ from openai import OpenAI
 
 from app.repositories import load_regions
 from app.services import embedding_service
+from app.services.media_utils import sanitize_display_image_url
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -806,7 +807,7 @@ def _score_row(
         " ".join([name, summary, address, rec, target, source]),
     )
     score += semantic_sim * 18.0
-    if image_url.startswith("http"):
+    if sanitize_display_image_url(image_url):
         score += 2
 
     region_blob = " ".join([region, province, address, name, summary]).lower()
@@ -898,6 +899,10 @@ def _score_regions(user_message: str) -> list[int]:
     return ordered_ids
 
 
+def _row_has_real_image(row: dict) -> bool:
+    return bool(sanitize_display_image_url(str(row.get("imageUrl", ""))))
+
+
 def _build_recommendation_ids(
     user_message: str,
     rows: list[dict],
@@ -906,6 +911,11 @@ def _build_recommendation_ids(
 ) -> list[int]:
     if not rows:
         return []
+
+    if os.getenv("CHAT_REQUIRE_REAL_IMAGE", "1").strip() != "0":
+        rows = [r for r in rows if _row_has_real_image(r)]
+        if not rows:
+            return []
 
     query_tokens = _tokenize(user_message)
     query_text = user_message.lower()

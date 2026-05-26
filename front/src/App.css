@@ -864,7 +864,13 @@ body { margin: 0; background: var(--gray-50); }
 .app-tab.active { color: var(--black); font-weight: 700; border-bottom-color: var(--black); }
 
 /* ── Trip Planner ── */
-.trip-planner-page { display: flex; flex-direction: column; gap: 20px; }
+.trip-planner-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  min-height: 560px;
+}
 
 .trip-planner-header {
   display: flex;
@@ -1791,9 +1797,9 @@ body { margin: 0; background: var(--gray-50); }
   box-shadow: 0 20px 60px rgba(0,0,0,0.2);
 }
 
-/* TripPlannerPage 내부 헤더 숨기기 */
-.trip-planner-header {
-  display: none !important;
+/* page-header와 중복되는 영문 타이틀만 숨김 (로드맵·챗 영역은 유지) */
+.trip-planner-header h2 {
+  display: none;
 }
 
 /* page-header 통일 */

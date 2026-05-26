@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import KakaoMap from "./KakaoMap";
 import { resolveBackendMediaUrl } from "../utils/apiMediaUrl";
+import { CARD_PLACEHOLDER_SVG } from "../utils/placeholderImage";
 
 /* ── 인사이트 정규화 ── */
 function normalizeInsightValues(values = []) {
@@ -203,8 +204,6 @@ function ArticleBody({ blocks }) {
 }
 
 /* ── 메인 모달 ── */
-const FALLBACK_IMG = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80";
-
 export default function RegionModal({
   region, isLoading, onClose, apiBaseUrl = "",
   crawlImageUrls = [], article = null, articleLoading = false,
@@ -275,7 +274,7 @@ export default function RegionModal({
         </div>
 
         {/* ── 이미지 캐러셀 ── */}
-        <ImageCarousel images={allImages} fallback={FALLBACK_IMG} />
+        <ImageCarousel images={allImages} fallback={CARD_PLACEHOLDER_SVG} />
 
         {/* ── 아티클 본문 ── */}
         <div style={{ padding: "24px 24px 0" }}>

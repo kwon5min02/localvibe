@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { googleLogout } from '@react-oauth/google';
 import CommonHeader from './components/CommonHeader';
 import GallerySearchBox from './components/GallerySearchBox';
@@ -9,10 +9,21 @@ import { defaultRegions } from './data/defaultRegions';
 import TripPlannerPage from './pages/TripPlannerPage';
 import MyPage from './pages/MyPage';
 import { normalizeRegionMediaFields, resolveBackendMediaUrl } from './utils/apiMediaUrl';
+import { addScrap, fetchMyScraps, removeScrap, syncMyScraps } from './utils/scrapsApi';
+import {
+  addPlaceToTrip,
+  createTrip,
+  deleteTrip,
+  fetchMyTrips,
+  removePlaceFromTrip,
+  syncMyTrips,
+} from './utils/tripsApi';
 
 const DEFAULT_REGIONS_NORMALIZED = defaultRegions.map((r) =>
   normalizeRegionMediaFields({ ...r }),
 );
+
+const MemoTripPlannerPage = memo(TripPlannerPage);
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 const FEED_SIZE = 9;
@@ -143,6 +154,7 @@ function SidebarAccount({ currentUser, onAccountClick, onLoginClick }) {
 
 export default function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [currentUser, setCurrentUser] = useState(() => { try { const raw = localStorage.getItem('lv_user'); return raw ? JSON.parse(raw) : null; } catch { return null; } });
   const [regions, setRegions] = useState(DEFAULT_REGIONS_NORMALIZED);
   const [displayedRegions, setDisplayedRegions] = useState(() => readPersistedGalleryRegions() ?? DEFAULT_REGIONS_NORMALIZED);
@@ -150,8 +162,8 @@ export default function App() {
   const [insightRegion, setInsightRegion] = useState(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('gallery');
-  const [scrappedIds, setScrappedIds] = useState(() => { try { const p = JSON.parse(localStorage.getItem('lv_scraps') || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } });
-  const [myTrips, setMyTrips] = useState(() => { try { const p = JSON.parse(localStorage.getItem('lv_my_trips') || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } });
+  const [scrappedIds, setScrappedIds] = useState([]);
+  const [myTrips, setMyTrips] = useState([]);
   const [modalCrawlImages, setModalCrawlImages] = useState([]);
   const [modalArticle, setModalArticle] = useState(null);
   const [modalArticleLoading, setModalArticleLoading] = useState(false);
@@ -172,6 +184,75 @@ export default function App() {
 
   useEffect(() => { const sync = () => { try { const raw = localStorage.getItem('lv_user'); setCurrentUser(raw ? JSON.parse(raw) : null); } catch { setCurrentUser(null); } }; window.addEventListener('lv-auth-changed', sync); return () => window.removeEventListener('lv-auth-changed', sync); }, []);
 
+  useEffect(() => {
+    if (!currentUser) {
+      setScrappedIds([]);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        let localIds = [];
+        try {
+          const raw = localStorage.getItem('lv_scraps');
+          const parsed = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(parsed)) {
+            localIds = parsed.map(Number).filter(Number.isFinite);
+          }
+        } catch { /* ignore */ }
+        const result = localIds.length > 0
+          ? await syncMyScraps(localIds)
+          : await fetchMyScraps();
+        if (cancelled) return;
+        setScrappedIds(result.placeIds);
+        if (localIds.length > 0) {
+          try { localStorage.removeItem('lv_scraps'); } catch { /* ignore */ }
+        }
+      } catch (err) {
+        if (!cancelled && err?.message !== 'not_logged_in') {
+          console.error('스크랩 목록 로드 실패', err);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setMyTrips([]);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        let localTrips = [];
+        try {
+          const raw = localStorage.getItem('lv_my_trips');
+          const parsed = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(parsed)) localTrips = parsed;
+        } catch { /* ignore */ }
+        const trips = localTrips.length > 0
+          ? await syncMyTrips(localTrips)
+          : await fetchMyTrips();
+        if (cancelled) return;
+        setMyTrips(
+          trips.map(t => ({
+            ...t,
+            places: (t.places || []).map(p => normalizeRegionMediaFields({ ...p })),
+          })),
+        );
+        if (localTrips.length > 0) {
+          try { localStorage.removeItem('lv_my_trips'); } catch { /* ignore */ }
+        }
+      } catch (err) {
+        if (!cancelled && err?.message !== 'not_logged_in') {
+          console.error('여행 일정 로드 실패', err);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser]);
+
   useEffect(() => { let m = true; fetch(`${API_BASE_URL}/api/regions`).then(r => r.ok ? r.json() : null).then(data => { if (!m || !Array.isArray(data?.regions) || !data.regions.length) return; const normalized = data.regions.map((r) => normalizeRegionMediaFields({ ...r })); setRegions(normalized); if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) setDisplayedRegions(pickFeedItems(normalized)); }).catch(() => { if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) setDisplayedRegions(pickFeedItems(DEFAULT_REGIONS_NORMALIZED)); }); return () => { m = false; }; }, []);
 
   useEffect(() => { let m = true; if (!selectedRegion?.id) { setInsightRegion(null); return; } setIsInsightLoading(true); fetch(`${API_BASE_URL}/api/regions/${selectedRegion.id}/insight`).then(r => r.ok ? r.json() : null).then(data => { if (m && data?.region) setInsightRegion(normalizeRegionMediaFields({ ...data.region })); }).catch(() => {}).finally(() => { if (m) setIsInsightLoading(false); }); return () => { m = false; }; }, [selectedRegion]);
@@ -181,7 +262,6 @@ export default function App() {
     let cancelled = false; setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(true);
     (async () => {
       try {
-        await fetch(`${API_BASE_URL}/api/places/${id}/crawl`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); if (cancelled) return;
         const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`); if (imgRes.ok && !cancelled) { const d = await imgRes.json(); setModalCrawlImages((d.images || []).map(x => x.url).filter(Boolean).map(u => resolveBackendMediaUrl(u))); }
         if (cancelled) return; const artRes = await fetch(`${API_BASE_URL}/api/places/${id}/article`); if (cancelled) return;
         if (artRes.ok) { const a = await artRes.json(); if (!cancelled) setModalArticle({ title: a.title || '', content: a.content || '' }); }
@@ -211,7 +291,33 @@ export default function App() {
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
   }, [sidebarWidth]);
 
-  const regionMap = useMemo(() => new Map(regions.map(r => [r.id, r])), [regions]);
+  const regionMap = useMemo(() => {
+    const map = new Map();
+    for (const r of regions) {
+      const id = Number(r?.id);
+      if (Number.isFinite(id)) map.set(id, r);
+    }
+    return map;
+  }, [regions]);
+
+  useEffect(() => {
+    const tab = location.state?.tab;
+    if (tab === 'planner' || tab === 'gallery' || tab === 'mypage') {
+      setActiveTab(tab);
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (activeTab === 'planner') {
+      setSelectedRegion(null);
+      setInsightRegion(null);
+      setModalCrawlImages([]);
+      setModalArticle(null);
+      setModalArticleLoading(false);
+      setChatbotOpen(false);
+    }
+  }, [activeTab]);
 
   const galleryDisplayRegions = useMemo(() => displayedRegions.map(r => {
     const id = Number(r?.id); if (!Number.isFinite(id)) return r;
@@ -254,38 +360,116 @@ export default function App() {
     finally { setChatbotBusy(false); }
   };
 
-  const handleToggleScrap = useCallback((regionId) => {
-    setScrappedIds(prev => { const next = prev.includes(regionId) ? prev.filter(id => id !== regionId) : [...prev, regionId]; localStorage.setItem('lv_scraps', JSON.stringify(next)); return next; });
-  }, []);
+  const handleToggleScrap = useCallback(async (regionId) => {
+    const id = Number(regionId);
+    if (!Number.isFinite(id)) return;
+    if (!currentUser) {
+      window.alert('스크랩은 로그인 후 이용할 수 있어요.');
+      navigate('/login');
+      return;
+    }
+    const wasScrapped = scrappedIds.includes(id);
+    setScrappedIds(prev => (wasScrapped ? prev.filter(x => x !== id) : [...prev, id]));
+    try {
+      if (wasScrapped) await removeScrap(id);
+      else await addScrap(id);
+    } catch (err) {
+      setScrappedIds(prev => (wasScrapped ? [...prev, id] : prev.filter(x => x !== id)));
+      if (err?.message === 'not_logged_in') {
+        window.alert('로그인이 만료되었어요. 다시 로그인해 주세요.');
+        navigate('/login');
+      } else {
+        window.alert('스크랩 저장에 실패했습니다.');
+      }
+    }
+  }, [currentUser, scrappedIds, navigate]);
 
   const handleRequestAddToTrip = useCallback((region) => { setTripSelectRegion(region); }, []);
 
-  const handleAddToSpecificTrip = useCallback((tripId) => {
-    if (!tripSelectRegion) return;
-    const region = tripSelectRegion;
-    setMyTrips(prev => {
-      const trip = prev.find(t => t.id === tripId); if (!trip) return prev;
-      if (trip.places.some(p => p.id === region.id)) { window.alert('이미 담긴 장소예요!'); return prev; }
-      const next = prev.map(t => t.id === tripId ? { ...t, places: [...t.places, region] } : t);
-      localStorage.setItem('lv_my_trips', JSON.stringify(next)); return next;
-    });
-    setTripSelectRegion(null);
-    window.alert(`"${region.name}"을(를) 여행에 담았어요!`);
-  }, [tripSelectRegion]);
+  const requireLoginForTrips = useCallback(() => {
+    window.alert('여행 일정은 로그인 후 저장됩니다.');
+    navigate('/login');
+    return false;
+  }, [navigate]);
 
-  const handleCreateNewTripAndAdd = useCallback(() => {
+  const handleCreateTrip = useCallback(async (name) => {
+    if (!currentUser) { requireLoginForTrips(); return null; }
+    const trip = await createTrip(name);
+    const normalized = {
+      ...trip,
+      places: (trip.places || []).map(p => normalizeRegionMediaFields({ ...p })),
+    };
+    setMyTrips(prev => [...prev, normalized]);
+    return normalized;
+  }, [currentUser, requireLoginForTrips]);
+
+  const handleDeleteTrip = useCallback(async (tripId) => {
+    if (!currentUser) { requireLoginForTrips(); return; }
+    await deleteTrip(tripId);
+    setMyTrips(prev => prev.filter(t => t.id !== tripId));
+  }, [currentUser, requireLoginForTrips]);
+
+  const handleAddPlaceToTrip = useCallback(async (tripId, place) => {
+    if (!currentUser) { requireLoginForTrips(); return; }
+    const region = normalizeRegionMediaFields({ ...place });
+    const trip = myTrips.find(t => t.id === tripId);
+    if (trip?.places?.some(p => p.id === region.id)) {
+      window.alert('이미 담긴 장소예요!');
+      return;
+    }
+    const updated = await addPlaceToTrip(tripId, region.id);
+    setMyTrips(prev => prev.map(t => (t.id === tripId
+      ? { ...updated, places: (updated.places || []).map(p => normalizeRegionMediaFields({ ...p })) }
+      : t)));
+  }, [currentUser, myTrips, requireLoginForTrips]);
+
+  const handleRemovePlaceFromTrip = useCallback(async (tripId, placeId) => {
+    if (!currentUser) { requireLoginForTrips(); return; }
+    const updated = await removePlaceFromTrip(tripId, placeId);
+    setMyTrips(prev => prev.map(t => (t.id === tripId
+      ? { ...updated, places: (updated.places || []).map(p => normalizeRegionMediaFields({ ...p })) }
+      : t)));
+  }, [currentUser, requireLoginForTrips]);
+
+  const handleAddToSpecificTrip = useCallback(async (tripId) => {
     if (!tripSelectRegion) return;
+    if (!currentUser) { requireLoginForTrips(); return; }
+    const region = tripSelectRegion;
+    try {
+      await handleAddPlaceToTrip(tripId, region);
+      setTripSelectRegion(null);
+      window.alert(`"${region.name}"을(를) 여행에 담았어요!`);
+    } catch (err) {
+      if (err?.message === 'not_logged_in') requireLoginForTrips();
+      else window.alert('여행에 담기에 실패했습니다.');
+    }
+  }, [tripSelectRegion, currentUser, handleAddPlaceToTrip, requireLoginForTrips]);
+
+  const handleCreateNewTripAndAdd = useCallback(async () => {
+    if (!tripSelectRegion) return;
+    if (!currentUser) { requireLoginForTrips(); return; }
     const region = tripSelectRegion;
     const tripName = prompt('새 여행 이름을 입력하세요:', `여행 ${new Date().toLocaleDateString('ko-KR')}`);
     if (!tripName?.trim()) return;
-    const newTrip = { id: Date.now(), name: tripName.trim(), createdAt: new Date().toISOString(), places: [region] };
-    setMyTrips(prev => { const next = [...prev, newTrip]; localStorage.setItem('lv_my_trips', JSON.stringify(next)); return next; });
-    setTripSelectRegion(null);
-    window.alert(`"${region.name}"을(를) "${tripName.trim()}"에 담았어요!`);
-  }, [tripSelectRegion]);
+    try {
+      const trip = await createTrip(tripName.trim());
+      const updated = await addPlaceToTrip(trip.id, region.id);
+      setMyTrips(prev => [...prev, {
+        ...updated,
+        places: (updated.places || []).map(p => normalizeRegionMediaFields({ ...p })),
+      }]);
+      setTripSelectRegion(null);
+      window.alert(`"${region.name}"을(를) "${tripName.trim()}"에 담았어요!`);
+    } catch (err) {
+      if (err?.message === 'not_logged_in') requireLoginForTrips();
+      else window.alert('여행 만들기에 실패했습니다.');
+    }
+  }, [tripSelectRegion, currentUser, requireLoginForTrips]);
 
   const handleLogout = () => {
     googleLogout(); localStorage.removeItem('lv_access_token'); localStorage.removeItem('lv_user');
+    setScrappedIds([]);
+    setMyTrips([]);
     window.dispatchEvent(new Event('lv-auth-changed')); setAccountPopupOpen(false);
   };
 
@@ -413,12 +597,22 @@ export default function App() {
               />
             </>
           )}
-          {activeTab === 'planner' && <TripPlannerPage regions={regions} />}
+          {activeTab === 'planner' && (
+            <MemoTripPlannerPage
+              regionMap={regionMap}
+              scrappedIds={scrappedIds}
+              onToggleScrap={handleToggleScrap}
+            />
+          )}
           {activeTab === 'mypage' && (
             <MyPage
               scrappedRegions={scrappedRegions}
+              isLoggedIn={Boolean(currentUser)}
               myTrips={myTrips}
-              setMyTrips={(next) => { setMyTrips(next); localStorage.setItem('lv_my_trips', JSON.stringify(next)); }}
+              onCreateTrip={handleCreateTrip}
+              onDeleteTrip={handleDeleteTrip}
+              onAddPlaceToTrip={handleAddPlaceToTrip}
+              onRemovePlaceFromTrip={handleRemovePlaceFromTrip}
               onToggleScrap={handleToggleScrap}
               onOpenRegion={region => { setSelectedRegion(region); setInsightRegion(null); }}
               onAddToTrip={handleRequestAddToTrip}
@@ -473,8 +667,8 @@ export default function App() {
 
       {/* 장소 모달 */}
       <RegionModal
-        region={insightRegion || selectedRegion}
-        isLoading={isInsightLoading}
+        region={activeTab === 'gallery' || activeTab === 'mypage' ? (insightRegion || selectedRegion) : null}
+        isLoading={(activeTab === 'gallery' || activeTab === 'mypage') && isInsightLoading}
         apiBaseUrl={API_BASE_URL}
         crawlImageUrls={modalCrawlImages}
         article={modalArticle}

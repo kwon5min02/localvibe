@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import RoadMap from '../components/RoadMap';
 import TripChatPanel from '../components/TripChatPanel';
 import RegionModal from '../components/RegionModal';
@@ -8,12 +8,16 @@ import { normalizeRegionMediaFields, resolveBackendMediaUrl } from '../utils/api
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
+const EMPTY_REGION_MAP = new Map();
+
 /**
  * TripPlannerPage Component
  * Split-screen layout: Left (RoadMap with locations), Right (TripChatPanel)
  * Shows a dynamic travel itinerary built through AI recommendations
  */
-export default function TripPlannerPage({ regions = [] }) {
+function TripPlannerPage({ regionMap, scrappedIds = [], onToggleScrap }) {
+  const map = regionMap instanceof Map ? regionMap : EMPTY_REGION_MAP;
+  const lookupRegion = (id) => map.get(Number(id));
   // Roadmap locations (user's selected trip itinerary)
   const [roadmapLocations, setRoadmapLocations] = useState([]);
   const chatResetRef = useRef(null);
@@ -25,15 +29,6 @@ export default function TripPlannerPage({ regions = [] }) {
   const [modalCrawlImages, setModalCrawlImages] = useState([]);
   const [modalArticle, setModalArticle] = useState(null);
   const [modalArticleLoading, setModalArticleLoading] = useState(false);
-  const [scrappedIds, setScrappedIds] = useState(() => {
-    try { const p = JSON.parse(localStorage.getItem('lv_scraps') || '[]'); return Array.isArray(p) ? p : []; } catch { return []; }
-  });
-
-  // Create a map of region ID -> full region data for quick lookup
-  const regionMap = useMemo(() => {
-    return new Map(regions.map(region => [region.id, region]));
-  }, [regions]);
-
   /** 모달: 인사이트가 좌표를 비우는 경우에도 로드맵에 있던 주소·좌표 유지 */
   const modalRegion = useMemo(() => {
     if (!selectedLocation) {
@@ -102,8 +97,6 @@ export default function TripPlannerPage({ regions = [] }) {
     setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(true);
     (async () => {
       try {
-        await fetch(`${API_BASE_URL}/api/places/${id}/crawl`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        if (cancelled) return;
         const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`);
         if (imgRes.ok && !cancelled) { const d = await imgRes.json(); setModalCrawlImages((d.images || []).map(x => x.url).filter(Boolean).map(u => resolveBackendMediaUrl(u))); }
         if (cancelled) return;
@@ -117,20 +110,12 @@ export default function TripPlannerPage({ regions = [] }) {
     return () => { cancelled = true; };
   }, [selectedLocation?.id]);
 
-  const handleToggleScrap = (regionId) => {
-    setScrappedIds(prev => {
-      const next = prev.includes(regionId) ? prev.filter(id => id !== regionId) : [...prev, regionId];
-      localStorage.setItem('lv_scraps', JSON.stringify(next));
-      return next;
-    });
-  };
-
   /**
    * Handle location replacement in roadmap
    * Replaces old location with new one at the same position
    */
   const handleReplaceLocation = (oldLocationId, newLocationId) => {
-    const newRegion = regionMap.get(Number(newLocationId));
+    const newRegion = lookupRegion(newLocationId);
     if (!newRegion) {
       return;
     }
@@ -141,7 +126,7 @@ export default function TripPlannerPage({ regions = [] }) {
   };
 
   const resolveRegionName = regionId => {
-    const region = regionMap.get(Number(regionId));
+    const region = lookupRegion(regionId);
     return region?.name || null;
   };
 
@@ -163,7 +148,7 @@ export default function TripPlannerPage({ regions = [] }) {
 
     // Get full region objects from recommendedIds
     const newRegions = recommendedIds
-      .map(id => regionMap.get(Number(id)))
+      .map(id => lookupRegion(id))
       .filter(region => region !== undefined);
 
     if (newRegions.length === 0) {
@@ -206,7 +191,7 @@ export default function TripPlannerPage({ regions = [] }) {
       return;
     }
     const next = recommendedIds
-      .map(id => regionMap.get(Number(id)))
+      .map(id => lookupRegion(id))
       .filter(region => region !== undefined);
     if (next.length === 0) {
       return;
@@ -335,7 +320,7 @@ export default function TripPlannerPage({ regions = [] }) {
         article={modalArticle}
         articleLoading={modalArticleLoading}
         scrappedIds={scrappedIds}
-        onToggleScrap={handleToggleScrap}
+        onToggleScrap={onToggleScrap}
         onClose={() => {
           setSelectedLocation(null);
           setInsightLocation(null);
@@ -347,3 +332,5 @@ export default function TripPlannerPage({ regions = [] }) {
     </div>
   );
 }
+
+export default memo(TripPlannerPage);

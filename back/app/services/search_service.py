@@ -203,6 +203,9 @@ def search_gallery(query: str, region_filter: str | None) -> list[dict[str, Any]
             p = places_store.get_place_by_id(session, place_id)
             if not p:
                 continue
+            if os.getenv("GALLERY_REQUIRE_REAL_IMAGE", "1").strip() != "0":
+                if not places_store.place_has_real_display_image(session, place_id):
+                    continue
             trend = _calc_trend_score(session, place_id)
             rec = _calc_recency_score(p.created_at)
             loc = _calc_location_score(p.region, p.province, region_filter)

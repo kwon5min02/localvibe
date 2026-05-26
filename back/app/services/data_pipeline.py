@@ -120,7 +120,11 @@ def clean_place(raw: dict[str, Any]) -> dict[str, Any] | None:
     lat_f = float(lat) if lat is not None and str(lat).strip() != "" else None
     lng_f = float(lng) if lng is not None and str(lng).strip() != "" else None
 
-    kto_img = places_store._normalize_https_image_url(raw.get("imageUrl"))
+    from app.services.media_utils import sanitize_display_image_url
+
+    kto_img = sanitize_display_image_url(
+        places_store._normalize_https_image_url(raw.get("imageUrl"))
+    )
 
     return {
         "content_id": content_id,
