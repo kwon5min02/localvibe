@@ -10,7 +10,10 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from app.repositories import load_regions
+from app.repositories import trends_store
+from app.repositories.db import mysql_url_configured, session_scope
 from app.services import embedding_service
+from app.services.dspy_recommender import run_dspy_gallery_search
 from app.services.media_utils import sanitize_display_image_url
 
 load_dotenv()
@@ -928,9 +931,18 @@ def _build_recommendation_ids(
     focus_tokens = _extract_focus_tokens(query_tokens, query_regions)
     locality_tokens = _extract_locality_tokens(query_tokens)
     token_stats = _build_token_stats(rows)
+    trend_scores: dict[int, float] = {}
+    if mysql_url_configured():
+        try:
+            with session_scope() as session:
+                place_ids = [int(r["id"]) for r in rows if "id" in r]
+                trend_scores = trends_store.get_trend_scores_for_places(session, place_ids)
+        except Exception:
+            logger.warning("[CHAT] trend score 로딩 실패 -> 감쇠 가중치 미적용")
 
     scored: list[tuple[int, float, str, dict]] = []
     intent_for_boost = intent if isinstance(intent, dict) else {}
+    trend_weight = float(os.getenv("CHAT_TREND_SCORE_WEIGHT", "6.0"))
     for row in rows:
         region_id, score, name = _score_row(
             row,
@@ -944,6 +956,7 @@ def _build_recommendation_ids(
             token_stats,
         )
         final_score = _apply_intent_score_boost(row, intent_for_boost, score)
+        final_score += trend_scores.get(region_id, 0.0) * trend_weight
         scored.append((region_id, final_score, name, row))
     scored.sort(key=lambda item: (item[1], item[2]), reverse=True)
     has_specific_region_match = any(
@@ -1112,6 +1125,52 @@ def _normalize_trip_recommended_ids(
     return normalized[:capped_limit]
 
 
+def _trip_items_per_day(user_message: str, intent: Optional[dict] = None) -> int:
+    """
+    트립 하루 추천 개수 동적 계산.
+    - 기본 5
+    - 느긋한 일정: 4
+    - 빡빡한 일정: 6~7
+    """
+    text = str(user_message or "").lower()
+    mood = str((intent or {}).get("mood") or "").lower()
+    relaxed_keywords = ("여유", "느긋", "천천히", "힐링", "빡세지 않게")
+    packed_keywords = ("빡세", "타이트", "많이", "최대한 많이", "알차게", "촘촘")
+    if any(k in text for k in relaxed_keywords) or mood == "calm":
+        return 4
+    if any(k in text for k in packed_keywords):
+        return 7
+    return int(os.getenv("TRIP_ITEMS_PER_DAY_DEFAULT", str(TRIP_ITEMS_PER_DAY)))
+
+
+def _select_ids_with_dspy_from_candidates(
+    user_message: str,
+    candidate_ids: list[int],
+    row_by_id: dict[int, dict],
+    limit: int,
+) -> tuple[list[int], str]:
+    candidate_rows = [row_by_id[i] for i in candidate_ids if i in row_by_id]
+    place_lines: list[str] = []
+    for row in candidate_rows:
+        place_lines.append(
+            f"- id={row['id']} / 이름={row.get('name','')} / 지역={row.get('region','')}/{row.get('province','')} "
+            f"/ 유형={row.get('category','')} / 요약={str(row.get('summary',''))[:140]}"
+        )
+    dspy_result = run_dspy_gallery_search(user_message, "\n".join(place_lines))
+    dspy_ids_raw = (
+        dspy_result.get("recommendedRegionIds", []) if isinstance(dspy_result, dict) else []
+    )
+    dspy_ids = [
+        int(i)
+        for i in dspy_ids_raw
+        if isinstance(i, int) or (isinstance(i, str) and i.isdigit())
+    ]
+    dspy_answer = dspy_result.get("answer", "").strip() if isinstance(dspy_result, dict) else ""
+    if dspy_ids:
+        return dspy_ids[: max(1, int(limit))], dspy_answer
+    return [], ""
+
+
 def get_chat_result(
     user_message: str,
     *,
@@ -1120,7 +1179,7 @@ def get_chat_result(
     transport: Optional[str] = None,
     duration: Optional[int] = None,
 ) -> dict:
-    api_key: Optional[str] = os.getenv("OPEN_API_KEY") or os.getenv("OPENAI_API_KEY")
+    api_key: Optional[str] = os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_API_KEY")
     model = "gpt-4o-mini"
     rows = load_regions()
     scope_notice = _out_of_scope_notice(user_message)
@@ -1159,13 +1218,25 @@ def get_chat_result(
             user_message, rows, FEED_TOP_K, intent=intent
         )
 
-    recommended_ids = _normalize_recommended_ids(
-        baseline_ids, valid_region_ids, baseline_ids
+    dspy_ids, dspy_answer = _select_ids_with_dspy_from_candidates(
+        user_message,
+        baseline_ids,
+        row_by_id,
+        FEED_TOP_K,
     )
+    chosen_ids = dspy_ids if dspy_ids else baseline_ids
+
+    recommended_ids = _normalize_recommended_ids(chosen_ids, valid_region_ids, baseline_ids)
     if not recommended_ids:
         no_match_answer = "요청하신 지역/조건과 정확히 일치하는 데이터를 찾지 못했습니다. 지역명이나 키워드를 조금 바꿔서 다시 입력해 주세요."
         answer = f"{scope_notice}\n{no_match_answer}" if scope_notice else no_match_answer
         return {"answer": answer, "recommendedRegionIds": []}
+    if dspy_ids:
+        answer = dspy_answer or _standard_answer_from_ids(recommended_ids, rows)
+        if scope_notice:
+            answer = f"{scope_notice}\n{answer}"
+        return {"answer": answer, "recommendedRegionIds": recommended_ids}
+
     if not api_key:
         fallback = _standard_answer_from_ids(recommended_ids, rows)
         answer = f"{scope_notice}\n{fallback}" if scope_notice else fallback
@@ -1565,7 +1636,8 @@ def _detect_trip_action(
         detected_days = args.get("detected_days")
         detected_duration = None
         if detected_nights is not None and detected_days is not None:
-            max_locations = max(1, int(detected_days) * TRIP_ITEMS_PER_DAY)
+            items_per_day = _trip_items_per_day(user_message)
+            max_locations = max(1, int(detected_days) * items_per_day)
             detected_duration = {
                 "nights": int(detected_nights),
                 "days": int(detected_days),
@@ -1594,7 +1666,7 @@ def get_trip_chat_result(
     replan: bool = False,
 ) -> dict:
     """Trip planner용 채팅 - OpenAI 답변만 반환 (자동 메시지 없음)"""
-    api_key: Optional[str] = os.getenv("OPEN_API_KEY") or os.getenv("OPENAI_API_KEY")
+    api_key: Optional[str] = os.getenv("OPENAI_API_KEY") or os.getenv("OPEN_API_KEY")
     model = "gpt-4o-mini"
     rows = load_regions()
     valid_region_ids = {int(row["id"]) for row in rows}
@@ -1659,9 +1731,10 @@ def get_trip_chat_result(
         if effective_exclude:
             current_ids_set.add(effective_exclude)
 
-    # tripDuration 기반 최대 개수 계산
+    # tripDuration 기반 최대 개수 계산 (고정 5개 -> 동적 per-day)
     days = trip_duration.get("days", 1)
-    max_locations = max(1, days * TRIP_ITEMS_PER_DAY)
+    items_per_day = _trip_items_per_day(user_message)
+    max_locations = max(1, int(days) * items_per_day)
 
     candidate_limit = max_locations
     # 교체 요청일 때는 제외 필터로 후보가 급감할 수 있어 탐색 폭을 넓혀둔다.
@@ -1711,12 +1784,48 @@ def get_trip_chat_result(
         baseline_ids,
         max_locations,
     )
-    recommended_ids = _reorder_trip_ids_meal_alternating(recommended_ids, rows)
+    dspy_trip_ids, dspy_trip_answer = _select_ids_with_dspy_from_candidates(
+        user_message,
+        baseline_ids,
+        row_by_id,
+        max_locations,
+    )
+    if dspy_trip_ids:
+        recommended_ids = _normalize_trip_recommended_ids(
+            dspy_trip_ids,
+            valid_region_ids,
+            baseline_ids,
+            max_locations,
+        )
+    schedule_context = ""
+    try:
+        from app.services.trip_planner_utils import build_trip_schedule
+
+        recommended_ids, schedule_context = build_trip_schedule(
+            recommended_ids,
+            rows,
+            days,
+            reg_f=reg_f,
+            prov_f=prov_f,
+            row_by_id=row_by_id,
+        )
+    except Exception:
+        logger.warning("[TRIP] trip_planner_utils 실패 -> 기존 정렬 로직 폴백")
+        recommended_ids = _reorder_trip_ids_meal_alternating(recommended_ids, rows)
 
     if not api_key:
         # API 키 없을 때는 기본 답변만 반환 (메시지 없이)
         return {
-            "answer": "추천 장소를 조회했습니다.",
+            "answer": dspy_trip_answer or "추천 장소를 조회했습니다.",
+            "recommendedRegionIds": recommended_ids,
+            "detectedAction": ai_detected_action,
+            "excludedLocationId": ai_excluded_id,
+            "detectedDuration": ai_detected_duration,
+        }
+
+    if dspy_trip_ids:
+        return {
+            "answer": dspy_trip_answer or _trip_answer_from_ids(recommended_ids, rows),
             "recommendedRegionIds": recommended_ids,
             "detectedAction": ai_detected_action,
             "excludedLocationId": ai_excluded_id,
@@ -1779,7 +1888,8 @@ def get_trip_chat_result(
                     "content": (
                         f"사용자가 요청한 여행 조건에 맞춰, 아래 후보 장소들만 사용해 추천하세요.\n"
                         f"{trip_ctx}\n\n"
-                        f"{user_atmosphere_hint}"
+                        + (f"[사전 배분된 시간대 일정]\n{schedule_context}\n\n" if schedule_context else "")
+                        + f"{user_atmosphere_hint}"
                         + (f"사용자 조건:\n{intent_context}\n\n" if intent_context.strip() else "")
                         + replan_user_note
                         + roadmap_cap_note
@@ -1811,7 +1921,19 @@ def get_trip_chat_result(
             baseline_ids,
             max_locations,
         )
-        ids = _reorder_trip_ids_meal_alternating(ids, rows)
+        try:
+            from app.services.trip_planner_utils import build_trip_schedule
+
+            ids, _ = build_trip_schedule(
+                ids,
+                rows,
+                days,
+                reg_f=reg_f,
+                prov_f=prov_f,
+                row_by_id=row_by_id,
+            )
+        except Exception:
+            ids = _reorder_trip_ids_meal_alternating(ids, rows)
         answer = llm_answer.strip() or _trip_answer_from_ids(ids, rows)
 
         # OpenAI 답변만 그대로 반환 (자동 메시지 X)
