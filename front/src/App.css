@@ -881,7 +881,228 @@ body { margin: 0; background: var(--gray-50); }
 }
 
 .trip-planner-header h2 { margin: 0; font-size: 20px; font-weight: 800; color: var(--black); }
-.trip-planner-stats { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--gray-500); }
+.trip-planner-subtitle { margin: 4px 0 0; font-size: 12px; color: var(--gray-500); }
+.trip-planner-stats { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; color: var(--gray-500); }
+.trip-planner-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gray-600);
+}
+.trip-planner-chip--action {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+.trip-planner-day-summaries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.trip-day-summary-card {
+  flex: 1 1 140px;
+  min-width: 120px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--gray-200);
+  background: var(--gray-50);
+  font-size: 11px;
+  color: var(--gray-600);
+}
+.trip-day-summary-card strong { display: block; font-size: 12px; color: var(--black); margin-bottom: 2px; }
+.trip-day-summary-flow { margin: 4px 0 0; font-size: 10px; line-height: 1.4; color: var(--primary, #4f6ef7); }
+.trip-day-summary-preview { margin: 4px 0 0; font-size: 10px; line-height: 1.35; }
+.trip-planner-route-map--empty .trip-planner-route-map-hint { margin: 0; font-size: 11px; color: var(--gray-400); }
+.sroadmap-empty-hint { margin: 6px 0 0; font-size: 12px; color: var(--gray-400); }
+.sroadmap-drag-hint {
+  display: none;
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--gray-600);
+  background: var(--gray-50);
+  border: 1px dashed var(--gray-300);
+  border-radius: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.sroadmap-drag-hint--visible { display: flex; }
+.sroadmap-drag-hint button {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  background: var(--white);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.sroadmap-day-section--empty {
+  min-height: 72px;
+  padding-bottom: 8px;
+  border: 1px dashed var(--gray-200);
+  border-radius: 8px;
+  background: var(--gray-50);
+}
+.sroadmap-day-period-summary {
+  margin: 2px 0 0;
+  padding-left: 30px;
+  font-size: 10px;
+  color: var(--gray-500);
+  line-height: 1.45;
+}
+.sroadmap-day-empty-hint {
+  margin: 4px 0 0;
+  padding-left: 30px;
+  font-size: 10px;
+  color: var(--gray-400);
+}
+.sroadmap-time--order { color: var(--gray-500); font-weight: 600; }
+.sroadmap-item--flash {
+  animation: sroadmap-flash 1.2s ease;
+}
+@keyframes sroadmap-flash {
+  0%, 100% { box-shadow: none; }
+  40% { box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.45); }
+}
+.trip-planner-save-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--gray-800);
+  background: var(--black);
+  color: var(--white);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.trip-planner-save-btn:hover { opacity: 0.9; }
+.trip-place-search { margin-bottom: 4px; }
+.trip-place-search-label {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gray-600);
+}
+.trip-place-search-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.trip-place-search-input:focus { border-color: var(--black); outline: none; }
+.trip-place-search-results {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.trip-place-search-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-bottom: 1px solid var(--gray-100);
+  background: var(--white);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.trip-place-search-item:disabled { opacity: 0.55; cursor: default; }
+.trip-place-search-item:not(:disabled):hover { background: var(--gray-50); }
+.trip-place-search-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.trip-place-search-item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--gray-500);
+}
+.trip-place-search-item-text strong {
+  font-size: 13px;
+  color: var(--black);
+}
+.trip-place-search-add { font-size: 11px; font-weight: 700; color: var(--primary, #4f6ef7); }
+.trip-place-search-added { font-size: 11px; color: var(--gray-400); }
+.trip-place-search-empty,
+.trip-place-search-cap {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--gray-400);
+}
+.trip-select-empty {
+  text-align: center;
+  color: var(--gray-400);
+  font-size: 13px;
+  padding: 16px 0;
+  margin: 0;
+}
+.trip-chat-cancel-btn {
+  margin: 0 0 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  background: var(--white);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.trip-chat-cancel-btn:hover { background: var(--gray-50); }
+.sroadmap-day-section--drop-target {
+  outline: 2px dashed var(--primary, #4f6ef7);
+  outline-offset: 4px;
+  border-radius: 8px;
+  background: #f8faff;
+}
+.sroadmap-day-drop-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--primary, #4f6ef7);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.sroadmap-day-section--drop-target .sroadmap-day-drop-label { opacity: 1; }
+.sroadmap-item--dragging { opacity: 0.45; }
+.sroadmap-item--drop-before {
+  box-shadow: inset 0 3px 0 var(--primary, #4f6ef7);
+}
+.sroadmap-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 100%;
+  color: var(--gray-400);
+  cursor: grab;
+}
+.sroadmap-item:active .sroadmap-drag-handle { cursor: grabbing; }
+.sroadmap-day-header-wrap { margin-bottom: 4px; }
+.sroadmap-day-sub { margin: 2px 0 0; padding-left: 2px; font-size: 10px; color: var(--gray-500); line-height: 1.4; }
 
 .trip-planner-clear-btn {
   padding: 4px 12px;
@@ -928,6 +1149,8 @@ body { margin: 0; background: var(--gray-50); }
 }
 
 .trip-planner-route-map-title { margin: 0 0 8px; font-size: 12px; font-weight: 700; color: var(--gray-600); }
+.trip-planner-route-map .multi-marker-map-canvas { min-height: 200px; }
+.trip-planner-route-map .multi-marker-map-title { display: none; }
 
 .trip-planner-right {
   background: var(--white);
@@ -975,6 +1198,9 @@ body { margin: 0; background: var(--gray-50); }
 .sroadmap-day-section { display: flex; flex-direction: column; gap: 10px; }
 
 .sroadmap-day-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   margin: 0;
   padding-left: 30px;
   font-size: 11px;
@@ -982,6 +1208,13 @@ body { margin: 0; background: var(--gray-50); }
   color: var(--gray-400);
   text-transform: uppercase;
   letter-spacing: 0.6px;
+}
+.sroadmap-day-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gray-500);
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .sroadmap-item {
@@ -1083,6 +1316,7 @@ body { margin: 0; background: var(--gray-50); }
 .sroadmap-image-trigger:hover .sroadmap-thumb { transform: scale(1.06); }
 
 .sroadmap-body { min-width: 0; background: transparent; border: none; box-shadow: none; padding: 0; }
+.sroadmap-time { margin: 0 0 4px; color: var(--primary, #4f6ef7); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
 .sroadmap-title { margin: 0; color: var(--black); font-size: 13px; font-weight: 700; line-height: 1.3; }
 .sroadmap-description { margin: 3px 0 0; color: var(--gray-500); font-size: 11px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
@@ -1121,6 +1355,26 @@ body { margin: 0; background: var(--gray-50); }
 .trip-chat-panel { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
 .trip-chat-title { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: var(--black); display: flex; align-items: center; gap: 5px; }
 
+.trip-chat-chip {
+  display: inline-block;
+  padding: 3px 8px;
+  margin: 0 4px 4px 0;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  color: var(--gray-600);
+}
+.trip-chat-chip--muted { color: var(--gray-400); }
+.trip-chat-chip--action {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+.trip-chat-loading-text { margin: 0 0 4px; font-size: 12px; font-weight: 600; }
+.trip-chat-loading-hint { margin: 0 0 8px; font-size: 10px; color: var(--gray-400); }
+.trip-chat-loading-dots { display: flex; gap: 4px; }
 .trip-chat-info {
   display: flex; align-items: center;
   justify-content: space-between;
@@ -1206,6 +1460,328 @@ body { margin: 0; background: var(--gray-50); }
 
 .ui-empty { font-size: 12px; color: var(--gray-400); margin: 3px 0; }
 
+/* ── 장소 비교 모달 (메인 RegionModal 톤) ── */
+.comparison-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 2100;
+}
+
+.comparison-modal-dialog {
+  position: relative;
+  width: min(920px, 96vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--white);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.comparison-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--gray-100);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(8px);
+  flex-shrink: 0;
+}
+
+.comparison-modal-back,
+.comparison-modal-close {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--gray-600);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 150ms, color 150ms;
+}
+
+.comparison-modal-back:hover,
+.comparison-modal-close:hover {
+  background: var(--gray-50);
+  color: var(--black);
+}
+
+.comparison-modal-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.comparison-modal-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--black);
+  letter-spacing: -0.3px;
+}
+
+.comparison-modal-subtitle {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--gray-500);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comparison-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 22px 8px;
+}
+
+.comparison-modal-empty {
+  margin: 24px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--gray-500);
+}
+
+.comparison-modal-grid {
+  position: relative;
+  display: grid;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.comparison-modal-grid--1 {
+  grid-template-columns: 1fr;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.comparison-modal-grid--2 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.comparison-modal-grid--3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.comparison-modal-vs {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--black);
+  color: var(--white);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+.comparison-modal-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.comparison-modal-card-hit {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  padding: 0;
+  border: 1px solid var(--gray-200);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--white);
+  cursor: default;
+  transition: border-color 180ms, box-shadow 180ms, transform 180ms;
+  font-family: inherit;
+}
+
+.comparison-modal-card-hit:not(:disabled) {
+  cursor: pointer;
+}
+
+.comparison-modal-card-hit:not(:disabled):hover {
+  border-color: var(--gray-300);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.08);
+  transform: translateY(-2px);
+}
+
+.comparison-modal-card-hero {
+  position: relative;
+  height: 200px;
+  background: var(--gray-900);
+  flex-shrink: 0;
+}
+
+.comparison-modal-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.comparison-modal-card-hero-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 16px 14px 12px;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0) 35%,
+    rgba(0, 0, 0, 0.72) 100%
+  );
+}
+
+.comparison-modal-card-name {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--white);
+  line-height: 1.25;
+  letter-spacing: -0.3px;
+}
+
+.comparison-modal-card-region {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.comparison-modal-card-body {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.comparison-modal-card-summary {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--gray-700);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.comparison-modal-card-address {
+  margin: 0;
+  font-size: 12px;
+  color: var(--gray-500);
+  line-height: 1.45;
+}
+
+.comparison-modal-attrs {
+  margin: 4px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comparison-modal-attr-row {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.comparison-modal-attr-row dt {
+  margin: 0;
+  font-weight: 600;
+  color: var(--gray-400);
+}
+
+.comparison-modal-attr-row dd {
+  margin: 0;
+  color: var(--gray-800);
+}
+
+.comparison-modal-card-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--gray-400);
+  text-align: center;
+}
+
+.comparison-modal-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--gray-100);
+  background: var(--gray-50);
+}
+
+.comparison-modal-footer p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.comparison-modal-done {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 10px;
+  background: var(--black);
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.comparison-modal-done:hover {
+  opacity: 0.88;
+}
+
+@media (max-width: 720px) {
+  .comparison-modal-grid--2,
+  .comparison-modal-grid--3 {
+    grid-template-columns: 1fr;
+  }
+
+  .comparison-modal-vs {
+    position: static;
+    transform: none;
+    margin: -4px auto 4px;
+  }
+
+  .comparison-modal-grid--2 {
+    gap: 8px;
+  }
+}
+
 .comparison-table { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 10px; }
 .comparison-card { background: var(--gray-50); border-radius: 8px; overflow: hidden; border: 1px solid var(--gray-200); }
 .comparison-card-img { width: 100%; height: 180px; object-fit: cover; }
@@ -1276,7 +1852,8 @@ body { margin: 0; background: var(--gray-50); }
 /* ── 반응형 ── */
 @media (max-width: 1200px) {
   .trip-planner-main { grid-template-columns: 1fr; }
-  .trip-planner-left { max-height: 480px; }
+  .trip-planner-right { order: -1; position: static; max-height: 420px; }
+  .trip-planner-left { max-height: none; }
   .sroadmap-item { grid-template-columns: 12px 110px minmax(0,1fr); }
 }
 
@@ -1293,6 +1870,7 @@ body { margin: 0; background: var(--gray-50); }
   .insight-grid { grid-template-columns: 1fr; }
   .trip-planner-main { grid-template-columns: 1fr; min-height: auto; }
   .trip-planner-left, .trip-planner-right { max-height: none; }
+  .trip-planner-right { order: -1; height: auto; max-height: 50vh; }
   .sroadmap-item { grid-template-columns: 10px 88px minmax(0,1fr); gap: 7px; }
   .sroadmap-timeline-list::before { left: 4px; }
   .sroadmap-day-header { padding-left: 24px; }

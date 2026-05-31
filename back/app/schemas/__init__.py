@@ -1,5 +1,12 @@
 from .auth import GoogleLoginRequest, GoogleLoginResponse, UserProfile
-from .chat import ChatRequest, ChatResponse, TripDuration, TripChatRequest, TripChatResponse
+from .chat import (
+    ChatRequest,
+    ChatResponse,
+    TripDuration,
+    TripChatRequest,
+    TripChatResponse,
+    TripScheduleEntry,
+)
 from .places import GallerySearchItem, GallerySearchResponse, PlaceArticleResponse, PlaceImageItem, PlaceImagesResponse, PlaceTextItem, PlaceTextsResponse
 from .region import Region, RegionInsight, RegionInsightResponse, RegionKtoImagesResponse, RegionListResponse
 from .scraps import ScrapListResponse, ScrapSyncRequest, ScrapToggleResponse
@@ -14,6 +21,7 @@ __all__ = [
     "TripDuration",
     "TripChatRequest",
     "TripChatResponse",
+    "TripScheduleEntry",
     "Region",
     "RegionInsight",
     "RegionInsightResponse",

@@ -7,6 +7,7 @@ import RegionGallery from './components/RegionGallery';
 import RegionModal from './components/RegionModal';
 import { defaultRegions } from './data/defaultRegions';
 import TripPlannerPage from './pages/TripPlannerPage';
+import TripSelectModal from './components/TripSelectModal';
 import MyPage from './pages/MyPage';
 import { normalizeRegionMediaFields, resolveBackendMediaUrl } from './utils/apiMediaUrl';
 import { addScrap, fetchMyScraps, removeScrap, syncMyScraps } from './utils/scrapsApi';
@@ -88,37 +89,6 @@ function mapSearchHitToRegion(row, regionMap) {
   const id = Number(row.place_id), base = regionMap.get(id);
   const sim = row.pinecone_similarity != null ? `유사도 ${Number(row.pinecone_similarity).toFixed(3)}` : '';
   return { id, name: row.name || base?.name || '이름 없음', imageUrl: base?.imageUrl || '', summary: base?.summary || [row.category, row.region, sim].filter(Boolean).join(' · ') || '상세 설명이 없습니다.', summaryShort: sim || base?.summaryShort, address: base?.address, latitude: base?.latitude, longitude: base?.longitude, region: row.region || base?.region, province: row.province || base?.province, dataSource: base?.dataSource, sourceId: base?.sourceId, recommendedBusinesses: base?.recommendedBusinesses?.length > 0 ? base.recommendedBusinesses : row.category ? [row.category] : [], busyHours: base?.busyHours || [], targetCustomers: base?.targetCustomers || [] };
-}
-
-// 여행 선택 모달
-function TripSelectModal({ myTrips, onSelect, onCreateNew, onClose }) {
-  return (
-    <div className="trip-select-backdrop" onClick={onClose}>
-      <div className="trip-select-modal" onClick={e => e.stopPropagation()}>
-        <div className="trip-select-header">
-          <h2 className="trip-select-title">어떤 여행에 담을까요?</h2>
-          <button type="button" className="trip-select-close" onClick={onClose}>✕</button>
-        </div>
-        <div className="trip-select-body">
-          {myTrips.length === 0
-            ? <p style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: '16px 0', margin: 0 }}>아직 만든 여행이 없어요.</p>
-            : myTrips.map(trip => (
-              <button key={trip.id} type="button" className="trip-select-item" onClick={() => onSelect(trip.id)}>
-                <div style={{ textAlign: 'left' }}>
-                  <div className="trip-select-item-name">{trip.name}</div>
-                  <div className="trip-select-item-count">{trip.places.length}개 장소 · {new Date(trip.createdAt).toLocaleDateString('ko-KR')}</div>
-                </div>
-                <span style={{ fontSize: 16, color: '#ccc' }}>›</span>
-              </button>
-            ))
-          }
-        </div>
-        <div className="trip-select-footer">
-          <button type="button" className="trip-select-new-btn" onClick={onCreateNew}>+ 새 여행 만들고 담기</button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // 사이드바 계정 영역
@@ -264,7 +234,16 @@ export default function App() {
       try {
         const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`); if (imgRes.ok && !cancelled) { const d = await imgRes.json(); setModalCrawlImages((d.images || []).map(x => x.url).filter(Boolean).map(u => resolveBackendMediaUrl(u))); }
         if (cancelled) return; const artRes = await fetch(`${API_BASE_URL}/api/places/${id}/article`); if (cancelled) return;
-        if (artRes.ok) { const a = await artRes.json(); if (!cancelled) setModalArticle({ title: a.title || '', content: a.content || '' }); }
+        if (artRes.ok) {
+          const a = await artRes.json();
+          if (!cancelled) {
+            setModalArticle({
+              title: a.title || '',
+              content: a.content || '',
+              blocks: Array.isArray(a.blocks) ? a.blocks : [],
+            });
+          }
+        }
         else if (!cancelled) setModalArticle(null); // 실패 시 null → 모달에서 하드코딩 아티클 표시
       } catch { if (!cancelled) setModalArticle(null); } // 실패 시 null → 하드코딩 폴백
       finally { if (!cancelled) setModalArticleLoading(false); }
@@ -602,6 +581,10 @@ export default function App() {
               regionMap={regionMap}
               scrappedIds={scrappedIds}
               onToggleScrap={handleToggleScrap}
+              currentUser={currentUser}
+              myTrips={myTrips}
+              onMyTripsChange={setMyTrips}
+              onRequireLogin={requireLoginForTrips}
             />
           )}
           {activeTab === 'mypage' && (
@@ -616,6 +599,7 @@ export default function App() {
               onToggleScrap={handleToggleScrap}
               onOpenRegion={region => { setSelectedRegion(region); setInsightRegion(null); }}
               onAddToTrip={handleRequestAddToTrip}
+              regionMap={regionMap}
               regions={regions}
             />
           )}

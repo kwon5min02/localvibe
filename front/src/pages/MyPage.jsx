@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 
 import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
 import { CARD_PLACEHOLDER_SVG, displayImageSrc } from '../utils/placeholderImage';
+import {
+  inferRegionHintsFromTripName,
+  searchPlacesForTrip,
+} from '../utils/tripPlaceSearch';
 
 export default function MyPage({
   scrappedRegions = [],
@@ -12,6 +16,7 @@ export default function MyPage({
   onRemovePlaceFromTrip,
   onToggleScrap,
   onOpenRegion,
+  regionMap = null,
   regions = [],
   isLoggedIn = false,
 }) {
@@ -67,7 +72,34 @@ export default function MyPage({
   };
 
   const currentTrip = myTrips.find(t => t.id === selectedTrip);
-  const filteredRegions = regions.filter(r => r.name?.includes(searchQuery) || r.region?.includes(searchQuery)).slice(0, 12);
+
+  useEffect(() => {
+    setSearchQuery('');
+  }, [selectedTrip]);
+
+  const catalogRegions = useMemo(() => {
+    if (regionMap?.size) {
+      return [...regionMap.values()];
+    }
+    return regions;
+  }, [regionMap, regions]);
+
+  const tripRegionHints = useMemo(
+    () => inferRegionHintsFromTripName(currentTrip?.name),
+    [currentTrip?.name],
+  );
+
+  const filteredRegions = useMemo(
+    () =>
+      searchPlacesForTrip(catalogRegions, {
+        query: searchQuery,
+        tripName: currentTrip?.name,
+        limit: 12,
+      }),
+    [catalogRegions, searchQuery, currentTrip?.name],
+  );
+
+  const searchQueryTrimmed = searchQuery.trim();
 
   return (
     <section style={{ width: '100%' }}>
@@ -221,6 +253,24 @@ export default function MyPage({
                       placeholder="장소 이름 또는 지역 검색..."
                       style={{ width: '100%', height: 38, border: '1px solid #e5e5e5', borderRadius: 8, padding: '0 12px', fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
                     />
+                    {!searchQueryTrimmed && tripRegionHints.length > 0 ? (
+                      <p style={{ margin: '8px 0 0', fontSize: 12, color: '#888' }}>
+                        「{tripRegionHints[0]}」 여행에 맞는 장소를 보여드려요. 다른 지역은 검색해 주세요.
+                      </p>
+                    ) : null}
+                    {!searchQueryTrimmed && tripRegionHints.length === 0 ? (
+                      <p style={{ margin: '8px 0 0', fontSize: 12, color: '#aaa' }}>
+                        장소 이름이나 지역(예: 제주, 부산)을 검색해 주세요.
+                      </p>
+                    ) : null}
+                    {searchQueryTrimmed && filteredRegions.length === 0 ? (
+                      <p style={{ margin: '10px 0 0', fontSize: 12, color: '#aaa' }}>검색 결과가 없어요.</p>
+                    ) : null}
+                    {!searchQueryTrimmed && tripRegionHints.length > 0 && filteredRegions.length === 0 ? (
+                      <p style={{ margin: '10px 0 0', fontSize: 12, color: '#aaa' }}>
+                        이 지역 장소 데이터가 아직 없어요. 검색으로 다른 이름을 찾아보세요.
+                      </p>
+                    ) : null}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10, maxHeight: 240, overflowY: 'auto' }}>
                       {filteredRegions.map(place => {
                         const alreadyIn = currentTrip.places.some(p => p.id === place.id);

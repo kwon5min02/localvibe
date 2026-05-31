@@ -113,7 +113,24 @@ function geocodeAddress(kakao, address) {
   });
 }
 
-export default function MultiMarkerMap({ locations = [] }) {
+const DAY_MARKER_COLORS = [
+  '#4f6ef7',
+  '#e05b6f',
+  '#0d9488',
+  '#d97706',
+  '#7c3aed',
+  '#0891b2',
+];
+
+function dayColor(day) {
+  const d = Math.max(1, Number(day) || 1);
+  return DAY_MARKER_COLORS[(d - 1) % DAY_MARKER_COLORS.length];
+}
+
+export default function MultiMarkerMap({
+  locations = [],
+  onMarkerSelect,
+}) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const boundsRef = useRef(null);
@@ -237,6 +254,8 @@ export default function MultiMarkerMap({ locations = [] }) {
         const bounds = new kakao.maps.LatLngBounds();
         let openInfoWindow = null;
 
+        const overlays = [];
+
         plotPoints.forEach(loc => {
           const position = new kakao.maps.LatLng(
             Number(loc.latitude),
@@ -244,22 +263,51 @@ export default function MultiMarkerMap({ locations = [] }) {
           );
           bounds.extend(position);
 
-          const marker = new kakao.maps.Marker({ map, position });
+          const order = loc.mapOrder != null ? String(loc.mapOrder) : '';
+          const bg = dayColor(loc.tripDay);
+          const el = document.createElement('div');
+          el.className = 'trip-map-marker-pin';
+          el.style.cssText = [
+            'width:28px;height:28px;border-radius:50%',
+            `background:${bg}`,
+            'color:#fff;font-size:12px;font-weight:800',
+            'display:flex;align-items:center;justify-content:center',
+            'border:2px solid #fff',
+            'box-shadow:0 2px 8px rgba(0,0,0,0.25)',
+            'cursor:pointer',
+            'font-family:inherit',
+          ].join(';');
+          el.textContent = order || '•';
+
+          const overlay = new kakao.maps.CustomOverlay({
+            position,
+            content: el,
+            yAnchor: 1.1,
+            zIndex: Number(loc.mapOrder) || 1,
+          });
+          overlay.setMap(map);
+          overlays.push(overlay);
+
           const rawName = String(loc.name || '장소');
           const name = rawName
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/"/g, '&quot;');
+          const dayLabel =
+            loc.tripDay != null ? `${loc.tripDay}일차` : '';
           const info = new kakao.maps.InfoWindow({
-            content: `<div style="padding:6px 10px;font-size:13px;font-weight:600;white-space:nowrap">${name}</div>`,
+            content: `<div style="padding:6px 10px;font-size:13px;font-weight:600;white-space:nowrap">${order ? `${order}. ` : ''}${name}${dayLabel ? `<span style="font-weight:500;color:#666;margin-left:6px">${dayLabel}</span>` : ''}</div>`,
           });
 
-          kakao.maps.event.addListener(marker, 'click', () => {
+          kakao.maps.event.addListener(el, 'click', () => {
             if (openInfoWindow) openInfoWindow.close();
-            info.open(map, marker);
+            info.open(map, overlay);
             openInfoWindow = info;
+            onMarkerSelect?.(loc.id);
           });
         });
+
+        mapInstanceRef.current._tripOverlays = overlays;
 
         boundsRef.current = bounds;
         if (!bounds.isEmpty()) map.setBounds(bounds);

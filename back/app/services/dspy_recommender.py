@@ -10,11 +10,16 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# uvicorn cwd와 무관하게 back/.env 를 읽음 (main.py와 동일)
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+_ENV_FILE = _BACKEND_ROOT / ".env"
+load_dotenv(dotenv_path=_ENV_FILE, override=True)
+
 logger = logging.getLogger(__name__)
 
 _dspy_lm = None
@@ -27,6 +32,14 @@ try:
 except ImportError:
     _dspy_module = None
     _DSPY_AVAILABLE = False
+
+
+def _resolve_model_path() -> Path:
+    raw = (os.getenv("DSPY_GALLERY_MODEL_PATH") or "dspy_gallery_optimized.json").strip()
+    path = Path(raw)
+    if not path.is_absolute():
+        path = _BACKEND_ROOT / path
+    return path
 
 
 def _flag_enabled() -> bool:
@@ -95,7 +108,8 @@ if _DSPY_AVAILABLE:
         intent_summary: str = dspy.InputField(desc="분석된 사용자 의도 요약")
         answer: str = dspy.OutputField(desc="사용자에게 보여줄 추천 이유")
         recommended_ids: str = dspy.OutputField(
-            desc="추천 장소 id 9개, 쉼표 구분. place_list에 있는 id만 사용. 예: 1,2,3,4,5,6,7,8,9"
+            desc="추천 장소 id, 쉼표 구분. place_list에 있는 id만 사용. "
+            "사용자가 절·사찰 제외를 요청하면 종교시설 id는 절대 넣지 마세요."
         )
 
     class GallerySearchRecommender(dspy.Module):
@@ -230,6 +244,16 @@ _TRAINSET_RAW: list[dict] = [
         "recommended_ids": "7820,7735,883,829,813,1970,6299,210,10872",
         "answer": "부산의 야경 분위기를 즐기기 좋은 장소들을 중심으로 골랐어요.",
     },
+    {
+        "user_query": "부산에서 친구들이랑 트렌디하게 놀 곳, 절은 안 가고 싶어",
+        "recommended_ids": "210,10872,11533,6298,7820,9572,883,829,813",
+        "answer": "친구와 함께 즐기기 좋은 핫플·맛집·카페 위주로 골랐고 사찰은 제외했어요.",
+    },
+    {
+        "user_query": "맛집 위주로 추천해줘 사찰 말고",
+        "recommended_ids": "6298,7820,9572,210,10872,883,6299,829,11533",
+        "answer": "맛집과 카페 위주로 골랐고 사찰·종교시설은 넣지 않았어요.",
+    },
 ]
 
 
@@ -302,15 +326,17 @@ def get_gallery_recommender() -> Optional[GallerySearchRecommender]:
     if not _flag_enabled():
         return None
     if not _DSPY_AVAILABLE:
-        logger.warning("[DSPY] dspy-ai 미설치")
+        logger.warning("[DSPY] dspy-ai 미설치 — pip install dspy-ai")
         return None
     if not _ensure_dspy_configured():
+        logger.warning("[DSPY] LM 초기화 실패 — OPENAI_API_KEY 확인")
         return None
-    save_path = os.getenv("DSPY_GALLERY_MODEL_PATH", "dspy_gallery_optimized.json")
-    if os.path.exists(save_path):
-        _recommender_instance = load_optimized(save_path)
+    save_path = _resolve_model_path()
+    if save_path.is_file():
+        _recommender_instance = load_optimized(str(save_path))
+        logger.info("[DSPY] 활성 — 최적화 모델 로드: %s", save_path.name)
     else:
-        logger.warning("[DSPY] 최적화 파일 없음 -> 기본 모델 사용")
+        logger.warning("[DSPY] 활성 — %s 없음, 기본 ChainOfThought 모델 사용", save_path)
         _recommender_instance = GallerySearchRecommender()
     return _recommender_instance
 
@@ -327,12 +353,17 @@ def run_dspy_gallery_search(user_query: str, place_list_str: str) -> dict:
             token = token.strip()
             if token.isdigit():
                 parsed_ids.append(int(token))
+        logger.info(
+            "[DSPY] 추론 완료 ids=%d candidates_lines=%d",
+            len(parsed_ids),
+            place_list_str.count("\n") + 1 if place_list_str else 0,
+        )
         return {
             "answer": str(getattr(prediction, "answer", "") or ""),
             "recommendedRegionIds": parsed_ids,
         }
     except Exception:
-        logger.exception("[DSPY] 갤러리 검색 실패")
+        logger.exception("[DSPY] 추론 실패 — baseline으로 폴백")
         return {}
 
 

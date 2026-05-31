@@ -74,13 +74,17 @@ _DAY_SLOTS: list[tuple[str, int, str]] = [
 ]
 
 _SLOT_TIME_LABEL: dict[str, str] = {
-    "morning": "09:00~11:00",
-    "lunch": "11:30~13:00",
-    "cafe_am": "13:00~14:30",
-    "afternoon": "15:00~17:00",
-    "dinner": "17:30~19:30",
-    "night": "19:30~21:00",
+    "morning": "오전",
+    "lunch": "오전",
+    "cafe_am": "오전",
+    "afternoon": "오후",
+    "dinner": "오후",
+    "night": "오후",
 }
+
+
+def _period_label_for_index_in_day(index_in_day: int) -> str:
+    return "오전" if index_in_day % 2 == 0 else "오후"
 
 
 def _get_place_slots(row: dict) -> list[str]:
@@ -123,54 +127,37 @@ def _get_place_slots(row: dict) -> list[str]:
 
 
 def assign_time_slots(place_ids: list[int], rows: list[dict], days: int) -> list[dict]:
+    """모든 place_id를 일차·시간대에 배분 (슬롯당 1개 제한 없음)."""
+    if not place_ids:
+        return []
+    days = max(1, int(days))
     row_by_id = {int(row["id"]): row for row in rows}
-    slot_buckets: dict[str, list[int]] = {slot: [] for slot, _, _ in _DAY_SLOTS}
-    unassigned: list[int] = []
+    slot_order = [s for s, _, _ in _DAY_SLOTS]
 
-    for pid in place_ids:
-        row = row_by_id.get(pid)
-        if not row:
-            continue
-        slots = _get_place_slots(row)
-        assigned = False
-        for slot in slots:
-            if slot in slot_buckets:
-                slot_buckets[slot].append(pid)
-                assigned = True
-                break
-        if not assigned:
-            unassigned.append(pid)
-
-    for pid in unassigned:
-        if len(slot_buckets["morning"]) <= len(slot_buckets["afternoon"]):
-            slot_buckets["morning"].append(pid)
-        else:
-            slot_buckets["afternoon"].append(pid)
+    day_buckets: list[list[int]] = [[] for _ in range(days)]
+    for idx, pid in enumerate(place_ids):
+        day_buckets[idx % days].append(pid)
 
     schedule: list[dict] = []
-    for day in range(1, days + 1):
-        for slot_name, max_count, _ in _DAY_SLOTS:
-            bucket = slot_buckets[slot_name]
-            if not bucket:
-                continue
-            limit = max_count if max_count > 0 else 1
-            for _ in range(limit):
-                if not bucket:
-                    break
-                pid = bucket.pop(0)
-                row = row_by_id.get(pid, {})
-                schedule.append(
-                    {
-                        "day": day,
-                        "slot": slot_name,
-                        "time": _SLOT_TIME_LABEL.get(slot_name, ""),
-                        "place_id": pid,
-                        "place_name": row.get("name", ""),
-                        "category": str((row.get("recommendedBusinesses") or [""])[0]),
-                        "latitude": row.get("latitude"),
-                        "longitude": row.get("longitude"),
-                    }
-                )
+    for day_num, pids in enumerate(day_buckets, start=1):
+        if not pids:
+            continue
+        for idx_in_day, pid in enumerate(pids):
+            row = row_by_id.get(pid, {})
+            period = _period_label_for_index_in_day(idx_in_day)
+            slot_name = "morning" if idx_in_day % 2 == 0 else "afternoon"
+            schedule.append(
+                {
+                    "day": day_num,
+                    "slot": slot_name,
+                    "time": period,
+                    "place_id": pid,
+                    "place_name": row.get("name", ""),
+                    "category": str((row.get("recommendedBusinesses") or [""])[0]),
+                    "latitude": row.get("latitude"),
+                    "longitude": row.get("longitude"),
+                }
+            )
     return schedule
 
 
@@ -302,13 +289,30 @@ def _matches_geo_filter(row: dict, reg_f: Optional[str], prov_f: Optional[str]) 
     if prov_f and str(row.get("province") or "").strip() != prov_f:
         return False
     if reg_f:
+        city = reg_f.strip()
+        if not city:
+            return True
         rr = str(row.get("region") or "").strip()
-        if rr == reg_f:
+        if rr == city or rr.startswith(city):
             return True
         blob = " ".join(
-            [rr, str(row.get("address") or ""), str(row.get("name") or ""), str(row.get("summary") or "")[:80]]
+            [
+                rr,
+                str(row.get("address") or ""),
+                str(row.get("name") or ""),
+                str(row.get("summary") or "")[:120],
+            ]
         )
-        return reg_f in blob
+        if city in blob:
+            return True
+        from app.services.chat_service import _CITY_TOKEN_TO_PROVINCE
+
+        for other in _CITY_TOKEN_TO_PROVINCE:
+            if other == city or len(other) < 2:
+                continue
+            if other in blob and city not in blob:
+                return False
+        return False
     return True
 
 
@@ -326,7 +330,8 @@ def filter_by_geo_strict(
     if removed > 0:
         logger.info("[TRIP] 지역 필터 강화: %d개 제거 (reg=%s, prov=%s)", removed, reg_f, prov_f)
 
-    if len(filtered) < 3:
+    # 시·군 단위(reg_f)일 때는 다른 도시로 후보를 채우지 않음 (여수 요청에 순천·목포 섞임 방지)
+    if len(filtered) < 3 and not reg_f:
         filtered_set = set(filtered)
         geo_rows = [r for r in rows if _matches_geo_filter(r, reg_f, prov_f) and int(r["id"]) not in filtered_set]
         extra = [int(r["id"]) for r in geo_rows[: 10 - len(filtered)]]
@@ -342,17 +347,17 @@ def build_trip_schedule(
     reg_f: Optional[str] = None,
     prov_f: Optional[str] = None,
     row_by_id: Optional[dict[int, dict]] = None,
-) -> tuple[list[int], str]:
+) -> tuple[list[int], str, list[dict]]:
     if row_by_id is None:
         row_by_id = {int(r["id"]): r for r in rows}
 
     if reg_f or prov_f:
         place_ids = filter_by_geo_strict(place_ids, row_by_id, reg_f, prov_f, rows)
     if not place_ids:
-        return [], ""
+        return [], "", []
 
     schedule = assign_time_slots(place_ids, rows, days)
     schedule = optimize_route_by_day(schedule, rows, days)
     ordered_ids = schedule_to_ordered_ids(schedule)
     schedule_ctx = schedule_to_prompt_context(schedule)
-    return ordered_ids, schedule_ctx
+    return ordered_ids, schedule_ctx, schedule
