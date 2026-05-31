@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import RoadMap from '../components/RoadMap';
 import TripChatPanel from '../components/TripChatPanel';
 import RegionModal from '../components/RegionModal';
-import ExportButton from '../components/ExportButton';
 import { normalizeRegionMediaFields, resolveBackendMediaUrl } from '../utils/apiMediaUrl';
 
 const API_BASE_URL =
@@ -306,9 +305,6 @@ export default function TripPlannerPage({ regions = [] }) {
                 isModalOpen={Boolean(selectedLocation)}
               />
             )}
-
-            {/* Export buttons */}
-            <ExportButton roadmapLocations={roadmapLocations} />
           </div>
         </div>
 

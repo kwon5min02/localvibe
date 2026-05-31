@@ -55,16 +55,25 @@ export default function CommonHeader({ onTabChange }) {
 
   return (
     <div className="common-header-wrap">
-      <div className="common-header-inner">
+      <div className="common-header-pill">
         {/* 로고 */}
-        <h1 className="common-header-logo" onClick={() => navigate("/")}>LocalVibe</h1>
+        <button type="button" className="common-header-logo" onClick={() => navigate("/")}>
+          <span className="common-header-logo-icon">🥒</span>
+          <span className="common-header-logo-text">LocalVibe</span>
+        </button>
+
+        {/* 구분선 */}
+        <div className="common-header-divider" />
 
         {/* 중앙 네비 */}
         <nav className="common-header-nav">
           <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('gallery') : navigate('/main')}>갤러리</span>
           <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('planner') : navigate('/main')}>플래너</span>
-          <span className="common-header-nav-link" onClick={() => navigate('/')}>소개</span>
+          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('mypage') : navigate('/main')}>마이페이지</span>
         </nav>
+
+        {/* 구분선 */}
+        <div className="common-header-divider" />
 
         {/* 우측 */}
         <div className="common-header-right" ref={loginRef}>
