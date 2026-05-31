@@ -1,8 +1,42 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import StartNavbar from '../components/StartNavbar';
+import CommonHeader from '../components/CommonHeader';
 
-function useFadeIn() {
+const TYPING_LINES = [
+  '진짜 그 동네의 분위기를 담다.',
+  'LocalVibe는 데이터 기반 추천으로\n분위기에 맞는 스팟을 빠르게 찾도록 도와줍니다.',
+];
+
+function useTypingSequence(lines, { charDelay = 40, lineDelay = 400 } = {}) {
+  const [lineIndex, setLineIndex] = useState(0);
+  const [displayed, setDisplayed] = useState(['', '']);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (lineIndex >= lines.length) { setDone(true); return; }
+    const full = lines[lineIndex];
+    let i = 0;
+    const tick = () => {
+      i++;
+      setDisplayed(prev => {
+        const next = [...prev];
+        next[lineIndex] = full.slice(0, i);
+        return next;
+      });
+      if (i < full.length) {
+        timer = setTimeout(tick, charDelay);
+      } else {
+        timer = setTimeout(() => setLineIndex(li => li + 1), lineDelay);
+      }
+    };
+    let timer = setTimeout(tick, lineIndex === 0 ? 300 : lineDelay);
+    return () => clearTimeout(timer);
+  }, [lineIndex]);
+
+  return { displayed, done, lineIndex };
+}
+
+function useFadeIn({ repeat = false } = {}) {
   const ref = useRef(null);
   useEffect(() => {
     const el = ref.current;
@@ -11,22 +45,25 @@ function useFadeIn() {
       ([entry]) => {
         if (entry.isIntersecting) {
           el.classList.add('sh-visible');
-          observer.disconnect();
+          if (!repeat) observer.disconnect();
+        } else if (repeat) {
+          el.classList.remove('sh-visible');
         }
       },
       { threshold: 0.1 },
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [repeat]);
   return ref;
 }
 
 export default function StartHome() {
   const navigate = useNavigate();
+  const { displayed, done, lineIndex } = useTypingSequence(TYPING_LINES);
   const heroRef = useFadeIn();
   const vibeRef = useFadeIn();
-  const techRef = useFadeIn();
+  const techRef = useFadeIn({ repeat: true });
   const feedRef = useFadeIn();
   const ctaRef = useFadeIn();
 
@@ -59,24 +96,22 @@ export default function StartHome() {
 
   return (
     <div style={s.page}>
-      <StartNavbar />
+      <CommonHeader />
 
       {/* 히어로 */}
       <div ref={heroRef} style={s.hero} className="sh-fade">
         <div style={s.heroText}>
           <p style={s.heroEyebrow}>AI 기반 로컬 여행 추천</p>
           <h1 style={s.heroTitle}>
-            진짜 그 동네의
-            <br />
-            분위기를 담다.
+            {displayed[0]}
+            {lineIndex === 0 && <span className="sh-cursor" />}
           </h1>
-          <p style={s.heroDesc}>
-            LocalVibe는 데이터 기반 추천으로
-            <br />
-            숨은 로컬 스팟을 빠르게 찾도록 도와줍니다.
+          <p style={{ ...s.heroDesc, minHeight: '3.4em', whiteSpace: 'pre-line' }}>
+            {displayed[1]}
+            {lineIndex === 1 && <span className="sh-cursor" />}
           </p>
           <button
-            style={s.ctaBtn}
+            style={{ ...s.ctaBtn, opacity: done ? 1 : 0, transform: done ? 'translateY(0)' : 'translateY(10px)', transition: 'opacity 0.4s ease, transform 0.4s ease', pointerEvents: done ? 'auto' : 'none' }}
             className="sh-btn"
             onClick={() => navigate('/main')}
           >
@@ -193,6 +228,8 @@ export default function StartHome() {
       <style>{`
         .sh-fade { opacity: 0; transform: translateY(24px); transition: opacity 0.55s ease, transform 0.55s ease; }
         .sh-fade.sh-visible { opacity: 1; transform: translateY(0); }
+        .sh-cursor { display: inline-block; width: 2px; height: 1em; background: #111; margin-left: 2px; vertical-align: text-bottom; animation: sh-blink 0.7s steps(1) infinite; }
+        @keyframes sh-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         .sh-btn { transition: transform 150ms ease, box-shadow 150ms ease !important; }
         .sh-btn:hover { transform: translateY(-2px) !important; box-shadow: 0 6px 20px rgba(0,0,0,0.18) !important; }
         .sh-btn2 { transition: background 150ms ease, transform 150ms ease !important; }
@@ -207,7 +244,7 @@ export default function StartHome() {
 }
 
 const s = {
-  page: { minHeight: '100vh', background: '#ffffff' },
+  page: { minHeight: '100vh', background: '#ffffff', paddingTop: '72px', marginBottom: '80px' },
   hero: {
     maxWidth: 1300,
     width: '90%',
@@ -361,7 +398,7 @@ const s = {
     lineHeight: 1.75,
   },
 
-  ctaBanner: { background: '#111', margin: '0' },
+  ctaBanner: { background: '#111', margin: '60px 0 0' },
   ctaInner: {
     maxWidth: 800,
     width: '90%',

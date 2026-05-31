@@ -739,7 +739,8 @@ export default function App() {
     [regions, scrappedIds],
   );
   const currentPage = PAGE_INFO[activeTab] || PAGE_INFO.gallery;
-  const effectiveSidebarWidth = sidebarOpen ? sidebarWidth : 0;
+  const showSidebar = activeTab === 'gallery' && sidebarOpen;
+  const effectiveSidebarWidth = showSidebar ? sidebarWidth : 0;
 
   return (
     <div className="app-page">
@@ -748,10 +749,10 @@ export default function App() {
       <div className="app-layout">
         {/* ── 사이드바 ── */}
         <aside
-          className={`app-sidebar${sidebarOpen ? '' : ' collapsed'}`}
+          className={`app-sidebar${showSidebar ? '' : ' collapsed'}`}
           style={{
             width: effectiveSidebarWidth,
-            minWidth: sidebarOpen ? SIDEBAR_WIDTH_MIN : 0,
+            minWidth: showSidebar ? SIDEBAR_WIDTH_MIN : 0,
             display: 'flex',
             flexDirection: 'column',
           }}
@@ -844,16 +845,25 @@ export default function App() {
                   placeholder="예: 여수 야경 맛집, 조용한 감성 카페, 부산 당일치기"
                 />
               </div>
-              <RegionGallery
-                regions={galleryDisplayRegions.slice(0, FEED_SIZE)}
-                scrappedIds={scrappedIds}
-                onToggleScrap={handleToggleScrap}
-                onAddToTrip={handleRequestAddToTrip}
-                onSelect={region => {
-                  setSelectedRegion(region);
-                  setInsightRegion(null);
-                }}
-              />
+              {gallerySearchBusy ? (
+                <div className="gallery-pickle-loading">
+                  <span className="gallery-pickle-emoji">🥒</span>
+                  <p className="gallery-pickle-text">딱 맞는 스팟 찾는 중...</p>
+                </div>
+              ) : (
+                <div className="gallery-results-fade">
+                  <RegionGallery
+                    regions={galleryDisplayRegions.slice(0, FEED_SIZE)}
+                    scrappedIds={scrappedIds}
+                    onToggleScrap={handleToggleScrap}
+                    onAddToTrip={handleRequestAddToTrip}
+                    onSelect={region => {
+                      setSelectedRegion(region);
+                      setInsightRegion(null);
+                    }}
+                  />
+                </div>
+              )}
             </>
           )}
           {activeTab === 'planner' && <TripPlannerPage regions={regions} />}
