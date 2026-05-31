@@ -70,26 +70,42 @@ def _fill_missing_insight_fields(row: dict) -> dict:
     return enriched
 
 
+def _region_from_row(row: dict) -> Region:
+    return Region(
+        id=row["id"],
+        name=row["name"],
+        imageUrl=row["imageUrl"],
+        summary=row["summary"],
+        summaryShort=row.get("summaryShort"),
+        address=row.get("address"),
+        latitude=row.get("latitude"),
+        longitude=row.get("longitude"),
+        region=row.get("region"),
+        province=row.get("province"),
+        sourceId=row.get("sourceId"),
+        dataSource=row.get("dataSource"),
+        contentTypeId=row.get("contentTypeId"),
+    )
+
+
 def list_regions() -> list[Region]:
     region_rows = load_regions()
-    return [
-        Region(
-            id=row["id"],
-            name=row["name"],
-            imageUrl=row["imageUrl"],
-            summary=row["summary"],
-            summaryShort=row.get("summaryShort"),
-            address=row.get("address"),
-            latitude=row.get("latitude"),
-            longitude=row.get("longitude"),
-            region=row.get("region"),
-            province=row.get("province"),
-            sourceId=row.get("sourceId"),
-            dataSource=row.get("dataSource"),
-            contentTypeId=row.get("contentTypeId"),
-        )
-        for row in region_rows
-    ]
+    return [_region_from_row(row) for row in region_rows]
+
+
+def list_regions_in_location(locality: str, *, limit: int = 48) -> list[Region]:
+    """사이드바 지역 클릭 — 주소·행정구역 기준 장소 목록 (이름 매칭 없음)."""
+    label = str(locality or "").strip()
+    if len(label) < 2:
+        return []
+    with session_scope() as session:
+        ids = places_store.find_place_ids_by_location_locality(session, label, limit=limit)
+        rows: list[dict] = []
+        for pid in ids:
+            d = places_store.get_as_region_dict(session, pid)
+            if d:
+                rows.append(_fill_missing_insight_fields(d))
+    return [_region_from_row(row) for row in rows]
 
 
 def get_region_insight(region_id: int) -> RegionInsight:

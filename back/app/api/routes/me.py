@@ -12,6 +12,7 @@ from app.schemas import (
     TripCreateRequest,
     TripListResponse,
     TripResponse,
+    TripReplacePlacesRequest,
     TripSyncRequest,
 )
 
@@ -117,6 +118,28 @@ def create_my_trip(body: TripCreateRequest, user: AuthUser = Depends(get_current
         raise HTTPException(status_code=400, detail="여행 이름을 입력해 주세요.")
     with session_scope() as session:
         trip = trips_store.create_trip(session, user.user_id, name)
+        return _trip_response(session, trip)
+
+
+@router.put("/trips/{trip_id}/places", response_model=TripResponse)
+def replace_my_trip_places(
+    trip_id: int,
+    body: TripReplacePlacesRequest,
+    user: AuthUser = Depends(get_current_user),
+):
+    """로드맵·채팅 일정을 여행에 그대로 저장 (기존 장소 목록 전체 교체)."""
+    place_ids: list[int] = []
+    for x in body.place_ids:
+        try:
+            place_ids.append(int(x))
+        except (TypeError, ValueError):
+            continue
+    with session_scope() as session:
+        if not trips_store.replace_trip_places(session, user.user_id, trip_id, place_ids):
+            raise HTTPException(status_code=404, detail="여행을 찾을 수 없습니다.")
+        trip = trips_store.get_trip_for_user(session, user.user_id, trip_id)
+        if not trip:
+            raise HTTPException(status_code=404, detail="여행을 찾을 수 없습니다.")
         return _trip_response(session, trip)
 
 

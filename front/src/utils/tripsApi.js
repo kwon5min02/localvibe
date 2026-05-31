@@ -97,6 +97,21 @@ export async function addPlaceToTrip(tripId, placeId) {
   return trip;
 }
 
+/** 로드맵 순서대로 여행 장소 전체 교체 */
+export async function replaceTripPlaces(tripId, placeIds) {
+  const ids = (placeIds || []).map(id => Number(id)).filter(Number.isFinite);
+  const res = await fetch(`${API_BASE_URL}/api/me/trips/${tripId}/places`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify({ place_ids: ids }),
+  });
+  if (res.status === 401) throw new Error('not_logged_in');
+  if (!res.ok) throw new Error(await parseError(res));
+  const trip = normalizeTrip(await res.json());
+  if (!trip) throw new Error('invalid trip response');
+  return trip;
+}
+
 export async function removePlaceFromTrip(tripId, placeId) {
   const res = await fetch(`${API_BASE_URL}/api/me/trips/${tripId}/places/${placeId}`, {
     method: 'DELETE',

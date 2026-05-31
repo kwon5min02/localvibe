@@ -5,7 +5,7 @@ import TripPlaceSearch from '../components/TripPlaceSearch';
 import TripSelectModal from '../components/TripSelectModal';
 import RegionModal from '../components/RegionModal';
 import { normalizeRegionMediaFields, resolveBackendMediaUrl } from '../utils/apiMediaUrl';
-import { syncMyTrips, createTrip } from '../utils/tripsApi';
+import { createTrip, replaceTripPlaces } from '../utils/tripsApi';
 import {
   applyScheduleToRegions,
   recomputeScheduleForOrderedLocations,
@@ -294,11 +294,29 @@ function TripPlannerPage({
     }
   };
 
-  const buildTripsPayloadForSave = tripId => {
-    const placePayload = roadmapLocations.map(loc => ({ id: loc.id }));
-    return myTrips.map(t =>
-      t.id === tripId ? { ...t, places: placePayload } : t,
-    );
+  const roadmapPlaceIds = useMemo(
+    () => roadmapLocations.map(loc => loc.id).filter(id => Number.isFinite(Number(id))),
+    [roadmapLocations],
+  );
+
+  const mergeTripIntoMyTrips = (updatedTrip) => {
+    if (!updatedTrip) return;
+    onMyTripsChange?.(prev => {
+      const list = Array.isArray(prev) ? prev : myTrips;
+      const idx = list.findIndex(t => t.id === updatedTrip.id);
+      const normalized = {
+        ...updatedTrip,
+        places: (updatedTrip.places || []).map(p =>
+          normalizeRegionMediaFields({ ...p }),
+        ),
+      };
+      if (idx >= 0) {
+        const next = [...list];
+        next[idx] = normalized;
+        return next;
+      }
+      return [...list, normalized];
+    });
   };
 
   const handleSaveToExistingTrip = async tripId => {
@@ -311,8 +329,8 @@ function TripPlannerPage({
       return;
     }
     try {
-      const synced = await syncMyTrips(buildTripsPayloadForSave(tripId));
-      onMyTripsChange?.(synced);
+      const updated = await replaceTripPlaces(tripId, roadmapPlaceIds);
+      mergeTripIntoMyTrips(updated);
       setSaveModalOpen(false);
       window.alert('마이페이지 여행에 일정을 저장했어요.');
     } catch (err) {
@@ -343,14 +361,8 @@ function TripPlannerPage({
     }
     try {
       const created = await createTrip(tripName.trim());
-      const synced = await syncMyTrips([
-        ...myTrips,
-        {
-          ...created,
-          places: roadmapLocations.map(loc => ({ id: loc.id })),
-        },
-      ]);
-      onMyTripsChange?.(synced);
+      const updated = await replaceTripPlaces(created.id, roadmapPlaceIds);
+      mergeTripIntoMyTrips(updated);
       setSaveModalOpen(false);
       window.alert(`"${tripName.trim()}"에 일정을 저장했어요.`);
     } catch (err) {

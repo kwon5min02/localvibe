@@ -10,7 +10,13 @@ from .chat import (
 from .places import GallerySearchItem, GallerySearchResponse, PlaceArticleResponse, PlaceImageItem, PlaceImagesResponse, PlaceTextItem, PlaceTextsResponse
 from .region import Region, RegionInsight, RegionInsightResponse, RegionKtoImagesResponse, RegionListResponse
 from .scraps import ScrapListResponse, ScrapSyncRequest, ScrapToggleResponse
-from .trips import TripCreateRequest, TripListResponse, TripResponse, TripSyncRequest
+from .trips import (
+    TripCreateRequest,
+    TripListResponse,
+    TripReplacePlacesRequest,
+    TripResponse,
+    TripSyncRequest,
+)
 
 __all__ = [
     "GoogleLoginRequest",
@@ -41,4 +47,5 @@ __all__ = [
     "TripListResponse",
     "TripResponse",
     "TripSyncRequest",
+    "TripReplacePlacesRequest",
 ]

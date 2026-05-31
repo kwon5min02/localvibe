@@ -19,6 +19,7 @@ import {
   removePlaceFromTrip,
   syncMyTrips,
 } from './utils/tripsApi';
+import { filterRegionsBySidebarLocation } from './utils/sidebarLocationFilter';
 
 const DEFAULT_REGIONS_NORMALIZED = defaultRegions.map((r) =>
   normalizeRegionMediaFields({ ...r }),
@@ -52,6 +53,14 @@ function readPersistedGalleryRegions() {
   }
 }
 function persistGalleryVectorResults(mapped) { try { sessionStorage.setItem(GALLERY_VECTOR_ACTIVE_KEY, '1'); sessionStorage.setItem(GALLERY_SEARCH_RESULTS_KEY, JSON.stringify(mapped)); } catch {} }
+
+function clearGalleryVectorLock(lockRef) {
+  try {
+    sessionStorage.removeItem(GALLERY_VECTOR_ACTIVE_KEY);
+    sessionStorage.removeItem(GALLERY_SEARCH_RESULTS_KEY);
+  } catch { /* ignore */ }
+  if (lockRef) lockRef.current = false;
+}
 
 const REGION_TREE = [
   { id: 'metro',       label: '수도권', children: ['서울', '경기', '인천'] },
@@ -323,6 +332,37 @@ export default function App() {
     finally { if (seq === gallerySearchSeqRef.current) setGallerySearchBusy(false); }
   }, [regionMap]);
 
+  const handleSidebarRegionClick = useCallback(async (label) => {
+    const key = String(label || '').trim();
+    if (!key) return;
+    clearGalleryVectorLock(galleryVectorSearchActiveRef);
+    setActiveTab('gallery');
+
+    const applyLocationResults = (list) => {
+      const normalized = (Array.isArray(list) ? list : [])
+        .map(r => normalizeRegionMediaFields(r))
+        .filter(Boolean);
+      if (normalized.length === 0) return false;
+      setDisplayedRegions(normalized.slice(0, Math.max(FEED_SIZE * 3, 24)));
+      return true;
+    };
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/regions?place_in=${encodeURIComponent(key)}`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (applyLocationResults(data?.regions)) return;
+      }
+    } catch { /* API 실패 시 로컬 필터 */ }
+
+    const local = filterRegionsBySidebarLocation(regions, key);
+    if (applyLocationResults(local)) return;
+
+    window.alert(`"${key}" 지역(주소 기준)에 맞는 장소를 찾지 못했습니다.`);
+  }, [regions]);
+
   const handleChatbotSubmit = async (e) => {
     e.preventDefault(); const msg = chatbotInput.trim(); if (!msg || chatbotBusy) return;
     setChatbotMessages(prev => [...prev, { role: 'user', text: msg }]); setChatbotInput(''); setChatbotBusy(true);
@@ -500,7 +540,7 @@ export default function App() {
                 {openRegions[r.id] && (
                   <div style={{ paddingLeft: 8 }}>
                     {r.children.map(city => (
-                      <button key={city} className="sidebar-link" type="button" style={{ fontSize: 12, color: '#777', paddingLeft: 18 }} onClick={() => { handleGalleryVectorSearch(city); setActiveTab('gallery'); }}>
+                      <button key={city} className="sidebar-link" type="button" style={{ fontSize: 12, color: '#777', paddingLeft: 18 }} onClick={() => { void handleSidebarRegionClick(city); }}>
                         {city}
                       </button>
                     ))}

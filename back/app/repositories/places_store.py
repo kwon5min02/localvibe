@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.repositories.db import Base
 from app.services.media_utils import sanitize_display_image_url
+from app.utils.sidebar_location import address_tokens_for_locality, place_row_matches_sidebar_locality
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,39 @@ def place_has_real_display_image(session, place_id: int) -> bool:
     if sanitize_display_image_url(_first_crawled_serve_url(session, place_id)):
         return True
     return bool(sanitize_display_image_url(_kto_image_url_from_insight(p.insight_json)))
+
+
+def find_place_ids_by_location_locality(session, locality: str, *, limit: int = 96) -> list[int]:
+    """
+    사이드바 지역 필터: region/province/address만 사용 (name 제외).
+    """
+    label = str(locality or "").strip()
+    if len(label) < 2:
+        return []
+    tokens = address_tokens_for_locality(label)
+    if not tokens:
+        return []
+
+    conds = []
+    for tok in tokens:
+        like = f"%{tok}%"
+        conds.append(Place.address.like(like))
+        conds.append(Place.province.like(like))
+    base = label.replace("시", "").replace("군", "").strip()
+    for reg_val in {label, base, f"{base}시", f"{base}군"}:
+        if reg_val:
+            conds.append(Place.region == reg_val)
+
+    stmt = select(Place).where(or_(*conds)).order_by(Place.place_id.desc()).limit(max(limit * 3, 48))
+    places = session.execute(stmt).scalars().all()
+    out: list[int] = []
+    for p in places:
+        if not place_row_matches_sidebar_locality(p, label):
+            continue
+        out.append(int(p.place_id))
+        if len(out) >= limit:
+            break
+    return out
 
 
 def find_place_ids_for_locality_hints(session, keywords: list[str], *, limit: int = 120) -> list[int]:

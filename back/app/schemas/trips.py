@@ -30,3 +30,7 @@ class TripSyncItem(BaseModel):
 
 class TripSyncRequest(BaseModel):
     trips: list[TripSyncItem] = Field(default_factory=list)
+
+
+class TripReplacePlacesRequest(BaseModel):
+    place_ids: list[int] = Field(default_factory=list)

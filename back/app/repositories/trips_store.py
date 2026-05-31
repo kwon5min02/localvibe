@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, UniqueConstraint, select
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, UniqueConstraint, delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.repositories import places_store
 from app.repositories.db import Base
 
 
@@ -109,6 +110,37 @@ def add_place_to_trip(session, user_id: int, trip_id: int, place_id: int) -> boo
         return True
     except IntegrityError:
         return False
+
+
+def replace_trip_places(session, user_id: int, trip_id: int, place_ids: list[int]) -> bool:
+    """여행 장소 목록을 순서대로 전부 교체 (채팅·로드맵 저장용)."""
+    trip = get_trip_for_user(session, user_id, trip_id)
+    if not trip:
+        return False
+    session.execute(delete(UserTripPlace).where(UserTripPlace.trip_id == trip_id))
+    seen: set[int] = set()
+    order = 0
+    for raw in place_ids:
+        try:
+            pid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if pid in seen:
+            continue
+        if not places_store.get_place_by_id(session, pid):
+            continue
+        seen.add(pid)
+        session.add(
+            UserTripPlace(
+                trip_id=trip_id,
+                place_id=pid,
+                sort_order=order,
+                added_at=datetime.utcnow(),
+            )
+        )
+        order += 1
+    session.flush()
+    return True
 
 
 def remove_place_from_trip(session, user_id: int, trip_id: int, place_id: int) -> bool:
