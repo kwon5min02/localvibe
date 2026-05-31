@@ -37,8 +37,21 @@ def _generate_article_with_gpt(
     client = OpenAI(api_key=api_key)
     system = (
         "당신은 한국 여행 매거진 에디터입니다. "
-        "입력된 공식 설명과 블로그 발췌만 바탕으로 500~1000자 한국어 아티클을 작성하세요. "
-        "과장·확인되지 않은 사실은 쓰지 마세요. JSON으로 title, content 필드를 반환하세요."
+        "입력된 공식 설명과 블로그 발췌만 바탕으로 한국어 아티클을 작성하세요. "
+        "과장·확인되지 않은 사실은 쓰지 마세요.\n\n"
+        "아래 JSON 형식으로 반환하세요:\n"
+        '{"title": "...", "body": [\n'
+        '  {"type": "lead", "text": "..."},\n'
+        '  {"type": "subheader", "text": "..."},\n'
+        '  {"type": "paragraph", "text": "..."},\n'
+        '  {"type": "quote", "text": "...", "attribution": "— 방문객 후기"},\n'
+        '  {"type": "paragraph", "text": "..."}\n'
+        "]}\n\n"
+        "body 구성 규칙:\n"
+        "- lead: 1개, 독자를 끌어당기는 첫 문장 (2~3문장)\n"
+        "- subheader: 2~3개, 섹션 제목\n"
+        "- paragraph: 4~6개, 각 200자 내외\n"
+        "- quote: 1개, 방문객 느낌을 담은 인용문"
     )
     user = (
         f"장소명: {place_name}\n"
@@ -58,7 +71,11 @@ def _generate_article_with_gpt(
         raw = resp.choices[0].message.content or "{}"
         data = json.loads(raw)
         title = str(data.get("title") or f"{place_name} 소개").strip()
-        content = str(data.get("content") or "").strip()
+        body = data.get("body")
+        if isinstance(body, list) and body:
+            content = json.dumps(body, ensure_ascii=False)
+        else:
+            content = str(data.get("content") or "").strip()
         if not content:
             return title, description or blog_blob[:1000]
         return title, content
