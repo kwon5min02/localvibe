@@ -31,7 +31,7 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--gray-50); }
-.app-page { min-height: 100vh; }
+.app-page { min-height: 100vh; padding-top: 72px; }
 
 /* ── TopHeader ── */
 .top-header {
@@ -133,12 +133,12 @@ body { margin: 0; background: var(--gray-50); }
 
 /* ── 사이드바 ── */
 .app-sidebar {
-  background: var(--white);
-  border-right: 1px solid var(--gray-200);
+  background: var(--gray-50);
+  /* border-right: 1px solid var(--gray-200); */
   padding: 0;
-  height: calc(100vh - 60px);
+  height: calc(100vh - 72px);
   position: sticky;
-  top: 60px;
+  top: 72px;
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
@@ -1370,7 +1370,7 @@ body { margin: 0; background: var(--gray-50); }
 
 /* ── Trip Chat ── */
 .trip-chat-panel { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
-.trip-chat-title { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: var(--black); display: flex; align-items: center; gap: 5px; }
+.trip-chat-title { margin: 0; font-size: 13px; font-weight: 700; color: var(--black); display: flex; align-items: center; gap: 5px; }
 
 .trip-chat-chip {
   display: inline-block;
@@ -2348,97 +2348,181 @@ body { margin: 0; background: var(--gray-50); }
 
 /* 공통 헤더 — StartHome 스타일로 통일 */
 .common-header-wrap {
-  background: var(--white);
-  border-bottom: 1px solid var(--gray-200);
-  position: sticky;
-  top: 0;
+  position: fixed;
+  top: 16px;
+  left: 0;
+  right: 0;
   z-index: 100;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
 }
 
-.common-header-inner {
-  max-width: 1400px;
-  width: 90%;
-  margin: 0 auto;
+.common-header-pill {
+  pointer-events: all;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 0;
-  gap: 24px;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1), 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
 .common-header-logo {
-  font-size: clamp(18px, 2.5vw, 26px);
-  font-weight: 800;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   cursor: pointer;
-  margin: 0;
+  background: none;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  transition: background var(--tr-fast);
+}
+.common-header-logo:hover { background: rgba(0,0,0,0.05); }
+
+.common-header-logo-icon { font-size: 24px; line-height: 1; }
+
+.common-header-logo-text {
+  font-size: 17px;
+  font-weight: 800;
   color: var(--black);
   letter-spacing: -0.3px;
-  flex-shrink: 0;
   white-space: nowrap;
+}
+
+.common-header-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+  margin: 0 4px;
 }
 
 .common-header-nav {
   display: flex;
-  gap: 28px;
-  flex: 1;
-  justify-content: center;
+  gap: 2px;
 }
 
 .common-header-nav-link {
-  font-size: 14px;
-  color: var(--gray-500);
+  font-size: 15px;
+  color: var(--gray-600);
   cursor: pointer;
   font-weight: 500;
-  transition: color var(--tr-fast);
+  padding: 6px 14px;
+  border-radius: 9999px;
+  transition: background var(--tr-fast), color var(--tr-fast);
   white-space: nowrap;
 }
 
-.common-header-nav-link:hover { color: var(--black); }
+.common-header-nav-link:hover {
+  background: rgba(0,0,0,0.06);
+  color: var(--black);
+}
 
 .common-header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
   flex-shrink: 0;
   position: relative;
 }
 
 .common-header-btn {
-  padding: 8px 16px;
-  font-size: 13px;
-  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 15px;
+  border-radius: 9999px;
   cursor: pointer;
-  border: 1px solid var(--gray-200);
-  background: var(--white);
-  color: var(--gray-700);
-  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--gray-600);
+  font-weight: 500;
   font-family: inherit;
   white-space: nowrap;
-  transition: background var(--tr-fast), border-color var(--tr-fast);
+  transition: background var(--tr-fast), color var(--tr-fast);
 }
 
-.common-header-btn:hover { background: var(--gray-50); border-color: var(--gray-300); }
-
-.common-header-btn-primary {
-  background: var(--black) !important;
-  color: var(--white) !important;
-  border-color: var(--black) !important;
+.common-header-btn:hover {
+  background: rgba(0,0,0,0.06);
+  color: var(--black);
 }
 
-.common-header-btn-primary:hover { background: var(--gray-800) !important; border-color: var(--gray-800) !important; }
+.common-header-btn-primary { color: var(--black) !important; }
+
+.common-header-profile-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.common-header-profile-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 9999px;
+  transition: background var(--tr-fast);
+  font-family: inherit;
+}
+.common-header-profile-trigger:hover { background: rgba(0,0,0,0.06); }
+
+.common-header-profile-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+  padding: 10px;
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 2000;
+  animation: dropdown-in 0.15s ease;
+}
+
+@keyframes dropdown-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.common-header-profile-logout {
+  padding: 7px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--gray-600);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background var(--tr-fast), color var(--tr-fast);
+}
+.common-header-profile-logout:hover { background: var(--gray-100); color: var(--black); }
 
 .common-header-avatar {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid var(--gray-200);
+  border: 1px solid rgba(0, 0, 0, 0.1);
   flex-shrink: 0;
 }
 
 .common-header-avatar-fallback {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: var(--gray-100);
   display: flex;
@@ -2456,7 +2540,8 @@ body { margin: 0; background: var(--gray-50); }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 120px;
+  max-width: 100px;
+  padding: 0 4px;
 }
 
 .common-header-login-panel {
@@ -2465,7 +2550,7 @@ body { margin: 0; background: var(--gray-50); }
   right: 0;
   background: var(--white);
   border: 1px solid var(--gray-200);
-  border-radius: 12px;
+  border-radius: 16px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.12);
   padding: 16px 20px;
   z-index: 2000;
@@ -3186,3 +3271,102 @@ body { margin: 0; background: var(--gray-50); }
 .chatbot-float-send:hover:not(:disabled) { background: var(--gray-800); }
 .chatbot-float-send:disabled { opacity: 0.4; cursor: not-allowed; }
 
+
+/* ── 갤러리 피클 로딩 ── */
+.gallery-pickle-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 0;
+  gap: 16px;
+}
+
+.gallery-pickle-emoji {
+  font-size: 64px;
+  animation: pickle-bounce 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes pickle-bounce {
+  from { transform: translateY(0) rotate(-8deg); }
+  to   { transform: translateY(-12px) rotate(8deg); }
+}
+
+.gallery-pickle-text {
+  margin: 0;
+  font-size: 15px;
+  color: var(--gray-400);
+  font-weight: 500;
+}
+
+.gallery-results-fade {
+  animation: gallery-fadein 0.4s ease;
+}
+
+@keyframes gallery-fadein {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── 채팅 도움말 툴팁 ── */
+.trip-chat-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+
+.trip-chat-help-btn {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--gray-200);
+  color: var(--gray-500);
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.trip-chat-help-btn:hover .trip-chat-help-tooltip {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0) !important;
+}
+
+.trip-chat-help-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  transform: translateY(-6px);
+  background: var(--gray-900);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  white-space: pre-line;
+  padding: 12px 14px;
+  border-radius: 10px;
+  width: 240px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--tr-fast), transform var(--tr-fast);
+  z-index: 100;
+}
+
+/* ── sidebar-scroll-area ── */
+.sidebar-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 10px 0;
+  scrollbar-width: thin;
+  scrollbar-color: #eee transparent;
+}
+.sidebar-scroll-area::-webkit-scrollbar { width: 3px; }
+.sidebar-scroll-area::-webkit-scrollbar-thumb { background: #eee; border-radius: 99px; }
