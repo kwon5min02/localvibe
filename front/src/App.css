@@ -877,7 +877,6 @@ body { margin: 0; background: var(--gray-50); }
   justify-content: space-between;
   align-items: center;
   padding-bottom: 14px;
-  border-bottom: 1px solid var(--gray-200);
 }
 
 .trip-planner-header h2 { margin: 0; font-size: 20px; font-weight: 800; color: var(--black); }
@@ -951,14 +950,14 @@ body { margin: 0; background: var(--gray-50); }
 }
 .sroadmap-day-period-summary {
   margin: 2px 0 0;
-  padding-left: 30px;
-  font-size: 10px;
-  color: var(--gray-500);
+  padding-left: 16px;
+  font-size: 11px;
+  color: #3b82f6;
   line-height: 1.45;
 }
 .sroadmap-day-empty-hint {
   margin: 4px 0 0;
-  padding-left: 30px;
+  padding-left: 16px;
   font-size: 10px;
   color: var(--gray-400);
 }
@@ -970,6 +969,19 @@ body { margin: 0; background: var(--gray-50); }
   0%, 100% { box-shadow: none; }
   40% { box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.45); }
 }
+.trip-planner-map-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--gray-300);
+  background: var(--white);
+  color: var(--black);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.trip-planner-map-btn:hover { background: var(--gray-50); }
+
 .trip-planner-save-btn {
   padding: 4px 12px;
   border: 1px solid var(--gray-800);
@@ -1195,26 +1207,31 @@ body { margin: 0; background: var(--gray-50); }
   background: var(--gray-200);
 }
 
-.sroadmap-day-section { display: flex; flex-direction: column; gap: 10px; }
+.sroadmap-day-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-left: 4px;
+  padding-left: 14px;
+  border-left: 3px solid #3b82f6;
+}
 
 .sroadmap-day-header {
   display: flex;
   align-items: baseline;
   gap: 8px;
   margin: 0;
-  padding-left: 30px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--gray-400);
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
+  padding-left: 16px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #1d4ed8;
+  letter-spacing: -0.02em;
 }
 .sroadmap-day-count {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--gray-500);
-  text-transform: none;
-  letter-spacing: 0;
+  color: #3b82f6;
+  opacity: 0.9;
 }
 
 .sroadmap-item {
@@ -1547,6 +1564,206 @@ body { margin: 0; background: var(--gray-50); }
   padding: 20px 22px 8px;
 }
 
+.comparison-modal-summary {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #f4f6ff 0%, #f8f8f8 100%);
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+}
+
+.comparison-modal-summary-label {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gray-500);
+  margin-bottom: 6px;
+}
+
+.comparison-modal-summary p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--gray-800);
+}
+
+.comparison-matrix-wrap {
+  overflow-x: auto;
+  margin-bottom: 18px;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+}
+
+.comparison-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.comparison-matrix th,
+.comparison-matrix td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--gray-100);
+  text-align: left;
+  vertical-align: top;
+}
+
+.comparison-matrix-place-col {
+  font-weight: 700;
+  color: var(--black);
+  min-width: 100px;
+}
+
+.comparison-matrix-row-label {
+  font-weight: 600;
+  color: var(--gray-600);
+  white-space: nowrap;
+  background: var(--gray-50);
+}
+
+.comparison-matrix-cell {
+  color: var(--gray-800);
+  line-height: 1.45;
+}
+
+.trip-visual-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 2100;
+}
+
+.trip-visual-modal-dialog {
+  width: min(920px, 96vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--white);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+}
+
+.trip-visual-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.trip-visual-modal-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.trip-visual-modal-close {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  background: var(--white);
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.trip-visual-modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 18px;
+}
+
+.trip-visual-modal-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.trip-visual-modal-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--gray-100);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.trip-visual-modal-done {
+  padding: 8px 18px;
+  background: var(--black);
+  color: var(--white);
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.sroadmap-flex-disclaimer {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--gray-600);
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+}
+
+.sroadmap-flex-disclaimer strong {
+  color: var(--black);
+  font-weight: 700;
+}
+
+.sroadmap-period-band {
+  margin-bottom: 12px;
+  padding-left: 8px;
+  border-left: 3px solid var(--gray-200);
+}
+
+.sroadmap-period-band-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sroadmap-period-band-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.sroadmap-period-band-head--inline {
+  margin: 8px 0 4px 36px;
+}
+
+.sroadmap-period-band-head--morning .sroadmap-period-band-label,
+.sroadmap-period-band-head--afternoon .sroadmap-period-band-label {
+  color: #2563eb;
+}
+
+.sroadmap-period-band-head--flex .sroadmap-period-band-label {
+  color: var(--gray-600);
+}
+
+.sroadmap-item-flow {
+  display: flex;
+  flex-direction: column;
+}
+
+.sroadmap-time-chip {
+  font-weight: 500;
+  color: var(--gray-500);
+}
+
 .comparison-modal-empty {
   margin: 24px 0;
   text-align: center;
@@ -1807,6 +2024,19 @@ body { margin: 0; background: var(--gray-50); }
 .multi-marker-map-loading { margin: 0 0 7px; font-size: 12px; color: var(--gray-500); }
 .multi-marker-map-error { font-size: 11px; color: #bb2222; margin: 3px 0; }
 .multi-marker-map-skipped { font-size: 10px; color: var(--gray-400); margin: 5px 0 0; }
+.multi-marker-map-fallback-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+.multi-marker-map-fallback-list a {
+  color: var(--black);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 .image-gallery { display: grid; grid-template-columns: repeat(3,1fr); gap: 4px; width: 100%; }
 .gallery-item { position: relative; border-radius: 5px; overflow: hidden; cursor: pointer; aspect-ratio: 1; }
@@ -1873,7 +2103,7 @@ body { margin: 0; background: var(--gray-50); }
   .trip-planner-right { order: -1; height: auto; max-height: 50vh; }
   .sroadmap-item { grid-template-columns: 10px 88px minmax(0,1fr); gap: 7px; }
   .sroadmap-timeline-list::before { left: 4px; }
-  .sroadmap-day-header { padding-left: 24px; }
+  .sroadmap-day-header { padding-left: 12px; }
   .sroadmap-dot { width: 8px; height: 8px; }
   .sroadmap-remove-btn, .sroadmap-move-btn { opacity: 1; pointer-events: auto; }
   .sroadmap-marker-actions { opacity: 1; pointer-events: auto; }
@@ -2488,6 +2718,47 @@ body { margin: 0; background: var(--gray-50); }
 .modal-article-close:hover { background: rgba(0,0,0,0.7); }
 
 /* 검색창 — 화면 넓어져도 중앙 고정 크기 유지 */
+.gallery-region-feed-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  max-width: 960px;
+  margin: 0 auto 14px;
+  padding: 10px 14px;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  box-shadow: var(--shadow-sm);
+}
+
+.gallery-region-feed-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.gallery-region-feed-shuffle {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--black);
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--tr-fast), border-color var(--tr-fast);
+}
+
+.gallery-region-feed-shuffle:hover {
+  background: var(--white);
+  border-color: var(--gray-300);
+}
+
 .gallery-search-center {
   display: flex;
   justify-content: center;

@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
 import {
   displayOrderLabel,
   displayPeriod,
   formatDayPeriodSummary,
+  groupDayItemsByPeriodBand,
   moveLocationToDay,
   moveLocationToIndex,
   shouldShowCardPeriod,
 } from '../utils/tripSchedule';
-
-const DRAG_HINT_KEY = 'lv_trip_drag_hint_seen';
 
 const FALLBACK_IMAGE =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='300'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23e8ebf7'/%3E%3Cstop offset='100%25' stop-color='%23cdd6f2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100%25' height='100%25' fill='url(%23g)'/%3E%3Ctext x='50%25' y='52%25' dominant-baseline='middle' text-anchor='middle' fill='%235468a3' font-family='Arial' font-size='28'%3ELocalVibe%3C/text%3E%3C/svg%3E";
@@ -68,24 +67,6 @@ export default function RoadMap({
 }) {
   const [dragIndex, setDragIndex] = useState(null);
   const [dropHint, setDropHint] = useState(null);
-  const [showDragHint, setShowDragHint] = useState(false);
-
-  useEffect(() => {
-    try {
-      setShowDragHint(!localStorage.getItem(DRAG_HINT_KEY));
-    } catch {
-      setShowDragHint(true);
-    }
-  }, []);
-
-  function dismissDragHint() {
-    try {
-      localStorage.setItem(DRAG_HINT_KEY, '1');
-    } catch {
-      /* ignore */
-    }
-    setShowDragHint(false);
-  }
 
   const nodes = useMemo(() => {
     return locations.map((loc, index) => ({
@@ -194,21 +175,133 @@ export default function RoadMap({
 
   const dragEnabled = Boolean(onItineraryChange);
 
+  function renderPlaceCard(node, section, band) {
+    const isSelected =
+      selectedId != null &&
+      (selectedId === node.clickId ||
+        String(selectedId) === String(node.clickId));
+    const isDragging = dragIndex === node.renderIndex;
+    const itemDropActive =
+      dropHint?.type === 'item' && dropHint.index === node.renderIndex;
+
+    return (
+      <motion.article
+        key={`${node.id}-${node.renderIndex}`}
+        id={`roadmap-place-${node.clickId}`}
+        className={`sroadmap-item ${isSelected ? 'selected' : ''} ${
+          isDragging ? 'sroadmap-item--dragging' : ''
+        } ${itemDropActive ? 'sroadmap-item--drop-before' : ''}`}
+        custom={node.renderIndex}
+        variants={itemVariants}
+        draggable={dragEnabled}
+        onDragStart={
+          dragEnabled
+            ? event => {
+                setDragIndex(node.renderIndex);
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData(
+                  'text/plain',
+                  String(node.renderIndex),
+                );
+              }
+            : undefined
+        }
+        onDragEnd={dragEnabled ? clearDrag : undefined}
+        onDragOver={
+          dragEnabled
+            ? event => {
+                event.preventDefault();
+                setDropHint({
+                  type: 'item',
+                  index: node.renderIndex,
+                });
+              }
+            : undefined
+        }
+        onDrop={
+          dragEnabled
+            ? event => {
+                event.preventDefault();
+                event.stopPropagation();
+                handleDropBeforeItem(node.renderIndex);
+              }
+            : undefined
+        }
+      >
+        <div className="sroadmap-marker">
+          {dragEnabled ? (
+            <span
+              className="sroadmap-drag-handle"
+              aria-hidden="true"
+              title="드래그하여 이동"
+            >
+              <DragHandleIcon />
+            </span>
+          ) : (
+            <span className="sroadmap-dot" />
+          )}
+          <div
+            className="sroadmap-marker-actions"
+            aria-label={`${node.name} 관리`}
+          >
+            {onRemoveNode ? (
+              <button
+                className="sroadmap-remove-btn"
+                type="button"
+                aria-label={`${node.name} 제거`}
+                onClick={event => {
+                  event.stopPropagation();
+                  event.currentTarget.blur();
+                  onRemoveNode(node.clickId);
+                }}
+              >
+                <DeleteIcon />
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <button
+          className="sroadmap-image-trigger"
+          type="button"
+          aria-label={`${node.name} 상세 보기`}
+          onClick={() => onNodeClick?.(node.clickId)}
+        >
+          <div className="sroadmap-thumb-wrap">
+            <img
+              className="sroadmap-thumb"
+              src={node.imageUrl}
+              alt={node.name}
+              loading="lazy"
+              draggable={false}
+              onError={event => {
+                event.currentTarget.src = FALLBACK_IMAGE;
+              }}
+            />
+          </div>
+        </button>
+
+        <div
+          className="sroadmap-body"
+          onClick={() => onNodeClick?.(node.clickId)}
+          style={{ cursor: 'pointer' }}
+        >
+          <p className="sroadmap-time sroadmap-time--order">
+            {displayOrderLabel(node.orderInDay)}
+          </p>
+          <h4 className="sroadmap-title">{node.name}</h4>
+          <p className="sroadmap-description">{node.description}</p>
+        </div>
+      </motion.article>
+    );
+  }
+
   return (
     <div
       className={`sroadmap-container sroadmap-timeline ${
         isModalOpen ? 'modal-open' : ''
       }`}
     >
-      {dragEnabled && showDragHint && nodes.length > 0 ? (
-        <div className="sroadmap-drag-hint sroadmap-drag-hint--visible">
-          <span>드래그로 순서를 바꾸거나, 다른 날 영역에 놓으면 일차가 바뀝니다.</span>
-          <button type="button" onClick={dismissDragHint}>
-            확인
-          </button>
-        </div>
-      ) : null}
-
       <motion.div
         className="sroadmap-timeline-list"
         initial="hidden"
@@ -218,6 +311,14 @@ export default function RoadMap({
         {daySections.map(section => {
           const dayDropActive =
             dropHint?.type === 'day' && dropHint.day === section.dayNumber;
+
+          const periodBands = groupDayItemsByPeriodBand(section.items, locations);
+          const bandByRenderIndex = new Map();
+          periodBands.forEach(band => {
+            band.items.forEach(node => {
+              bandByRenderIndex.set(node.renderIndex, band);
+            });
+          });
 
           return (
             <section
@@ -269,131 +370,31 @@ export default function RoadMap({
                 ) : null}
               </div>
 
-              {section.items.map(node => {
-                const isSelected =
-                  selectedId != null &&
-                  (selectedId === node.clickId ||
-                    String(selectedId) === String(node.clickId));
-                const isDragging = dragIndex === node.renderIndex;
-                const itemDropActive =
-                  dropHint?.type === 'item' &&
-                  dropHint.index === node.renderIndex;
+              {(() => {
+                let lastBandKey = null;
+                return section.items.map(node => {
+                  const band = bandByRenderIndex.get(node.renderIndex) || {
+                    key: 'flex',
+                    label: '순서',
+                    hint: '',
+                  };
+                  const showBandHead = band.key !== lastBandKey;
+                  lastBandKey = band.key;
 
-                return (
-                  <motion.article
-                    key={`${node.id}-${node.renderIndex}`}
-                    id={`roadmap-place-${node.clickId}`}
-                    className={`sroadmap-item ${isSelected ? 'selected' : ''} ${
-                      isDragging ? 'sroadmap-item--dragging' : ''
-                    } ${itemDropActive ? 'sroadmap-item--drop-before' : ''}`}
-                    custom={node.renderIndex}
-                    variants={itemVariants}
-                    draggable={dragEnabled}
-                    onDragStart={
-                      dragEnabled
-                        ? event => {
-                            setDragIndex(node.renderIndex);
-                            event.dataTransfer.effectAllowed = 'move';
-                            event.dataTransfer.setData(
-                              'text/plain',
-                              String(node.renderIndex),
-                            );
-                          }
-                        : undefined
-                    }
-                    onDragEnd={dragEnabled ? clearDrag : undefined}
-                    onDragOver={
-                      dragEnabled
-                        ? event => {
-                            event.preventDefault();
-                            setDropHint({
-                              type: 'item',
-                              index: node.renderIndex,
-                            });
-                          }
-                        : undefined
-                    }
-                    onDrop={
-                      dragEnabled
-                        ? event => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            handleDropBeforeItem(node.renderIndex);
-                          }
-                        : undefined
-                    }
-                  >
-                    <div className="sroadmap-marker">
-                      {dragEnabled ? (
-                        <span
-                          className="sroadmap-drag-handle"
-                          aria-hidden="true"
-                          title="드래그하여 이동"
+                  return (
+                    <div key={`flow-${node.renderIndex}`} className="sroadmap-item-flow">
+                      {showBandHead ? (
+                        <div
+                          className={`sroadmap-period-band-head sroadmap-period-band-head--inline sroadmap-period-band-head--${band.key}`}
                         >
-                          <DragHandleIcon />
-                        </span>
-                      ) : (
-                        <span className="sroadmap-dot" />
-                      )}
-                      <div
-                        className="sroadmap-marker-actions"
-                        aria-label={`${node.name} 관리`}
-                      >
-                        {onRemoveNode ? (
-                          <button
-                            className="sroadmap-remove-btn"
-                            type="button"
-                            aria-label={`${node.name} 제거`}
-                            onClick={event => {
-                              event.stopPropagation();
-                              event.currentTarget.blur();
-                              onRemoveNode(node.clickId);
-                            }}
-                          >
-                            <DeleteIcon />
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <button
-                      className="sroadmap-image-trigger"
-                      type="button"
-                      aria-label={`${node.name} 상세 보기`}
-                      onClick={() => onNodeClick?.(node.clickId)}
-                    >
-                      <div className="sroadmap-thumb-wrap">
-                        <img
-                          className="sroadmap-thumb"
-                          src={node.imageUrl}
-                          alt={node.name}
-                          loading="lazy"
-                          draggable={false}
-                          onError={event => {
-                            event.currentTarget.src = FALLBACK_IMAGE;
-                          }}
-                        />
-                      </div>
-                    </button>
-
-                    <div
-                      className="sroadmap-body"
-                      onClick={() => onNodeClick?.(node.clickId)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      {section.showCardPeriod && node.period ? (
-                        <p className="sroadmap-time">{node.period}</p>
-                      ) : !section.showCardPeriod ? (
-                        <p className="sroadmap-time sroadmap-time--order">
-                          {displayOrderLabel(node.orderInDay)}
-                        </p>
+                          <span className="sroadmap-period-band-label">{band.label}</span>
+                        </div>
                       ) : null}
-                      <h4 className="sroadmap-title">{node.name}</h4>
-                      <p className="sroadmap-description">{node.description}</p>
+                      {renderPlaceCard(node, section, band)}
                     </div>
-                  </motion.article>
-                );
-              })}
+                  );
+                });
+              })()}
             </section>
           );
         })}

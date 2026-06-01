@@ -1,72 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-
-const KAKAO_JS_KEY =
-  import.meta.env.VITE_KAKAO_JS_KEY || '0da5b46d0248e671b357568d3720d935';
-const KAKAO_SCRIPT_ID = 'kakao-map-sdk-script';
-
-function loadKakaoSdk() {
-  return new Promise((resolve, reject) => {
-    if (!KAKAO_JS_KEY) {
-      reject(new Error('sdk_blocked'));
-      return;
-    }
-
-    const hasGeocoder = Boolean(window.kakao?.maps?.services?.Geocoder);
-    if (window.kakao?.maps?.load && hasGeocoder) {
-      window.kakao.maps.load(() => resolve(window.kakao));
-      return;
-    }
-
-    if (
-      document.getElementById(KAKAO_SCRIPT_ID) &&
-      window.kakao?.maps?.load &&
-      !window.kakao?.maps?.services?.Geocoder
-    ) {
-      const stale = document.getElementById(KAKAO_SCRIPT_ID);
-      if (stale) stale.remove();
-      try {
-        delete window.kakao;
-      } catch (_) {
-        window.kakao = undefined;
-      }
-    }
-
-    if (window.kakao?.maps?.load && window.kakao?.maps?.services?.Geocoder) {
-      window.kakao.maps.load(() => resolve(window.kakao));
-      return;
-    }
-
-    const existing = document.getElementById(KAKAO_SCRIPT_ID);
-    if (existing) {
-      existing.addEventListener(
-        'load',
-        () => {
-          window.kakao?.maps?.load(() => resolve(window.kakao));
-        },
-        { once: true },
-      );
-      existing.addEventListener('error', () => reject(new Error('sdk_blocked')), {
-        once: true,
-      });
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = KAKAO_SCRIPT_ID;
-    script.async = true;
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false&libraries=services`;
-    script.onload = () => {
-      if (!window.kakao?.maps?.load) {
-        reject(new Error('sdk_blocked'));
-        return;
-      }
-      window.kakao.maps.load(() => resolve(window.kakao));
-    };
-    script.onerror = () => reject(new Error('sdk_blocked'));
-    document.head.appendChild(script);
-    setTimeout(() => reject(new Error('sdk_timeout')), 8000);
-  });
-}
+import { geocodeAddressesBatch } from '../../utils/geocodeApi';
+import {
+  buildKakaoMapCenterUrl,
+  buildKakaoPlaceUrl,
+  geocodeAddressWithKakao,
+  loadKakaoSdk,
+} from '../../utils/kakaoMapSdk';
 
 function hasCoord(loc) {
   return (
@@ -77,40 +16,12 @@ function hasCoord(loc) {
   );
 }
 
-/** API에 address가 비어 있고 본문에만 주소가 있는 경우 */
 function pickAddress(loc) {
   const a = String(loc.address || '').trim();
-  if (a) {
-    return a;
-  }
-  const blob = [loc.summary, loc.description]
-    .map(x => String(x || ''))
-    .join(' ');
+  if (a) return a;
+  const blob = [loc.summary, loc.description].map(x => String(x || '')).join(' ');
   const m = blob.match(/주소[:\s]*([^\n]+?)(?:\n|$)/);
-  if (m) {
-    return m[1].trim();
-  }
-  return '';
-}
-
-function geocodeAddress(kakao, address) {
-  const q = String(address || '').trim();
-  if (!q) {
-    return Promise.resolve(null);
-  }
-  return new Promise(resolve => {
-    const geocoder = new kakao.maps.services.Geocoder();
-    geocoder.addressSearch(q, (result, status) => {
-      if (status === kakao.maps.services.Status.OK && result?.[0]) {
-        resolve({
-          lat: parseFloat(result[0].y),
-          lng: parseFloat(result[0].x),
-        });
-      } else {
-        resolve(null);
-      }
-    });
-  });
+  return m ? m[1].trim() : '';
 }
 
 const DAY_MARKER_COLORS = [
@@ -127,6 +38,136 @@ function dayColor(day) {
   return DAY_MARKER_COLORS[(d - 1) % DAY_MARKER_COLORS.length];
 }
 
+function paintMap(kakao, mapEl, plotPoints, onMarkerSelect) {
+  mapEl.innerHTML = '';
+
+  const map = new kakao.maps.Map(mapEl, {
+    center: new kakao.maps.LatLng(36.5, 127.5),
+    level: 10,
+  });
+
+  const bounds = new kakao.maps.LatLngBounds();
+  let openInfoWindow = null;
+
+  plotPoints.forEach(loc => {
+    const position = new kakao.maps.LatLng(
+      Number(loc.latitude),
+      Number(loc.longitude),
+    );
+    bounds.extend(position);
+
+    const order = loc.mapOrder != null ? String(loc.mapOrder) : '';
+    const bg = dayColor(loc.tripDay);
+    const el = document.createElement('div');
+    el.className = 'trip-map-marker-pin';
+    el.style.cssText = [
+      'width:28px;height:28px;border-radius:50%',
+      `background:${bg}`,
+      'color:#fff;font-size:12px;font-weight:800',
+      'display:flex;align-items:center;justify-content:center',
+      'border:2px solid #fff',
+      'box-shadow:0 2px 8px rgba(0,0,0,0.25)',
+      'cursor:pointer',
+      'font-family:inherit',
+    ].join(';');
+    el.textContent = order || '•';
+
+    const overlay = new kakao.maps.CustomOverlay({
+      position,
+      content: el,
+      yAnchor: 1.1,
+      zIndex: Number(loc.mapOrder) || 1,
+    });
+    overlay.setMap(map);
+
+    const rawName = String(loc.name || '장소');
+    const name = rawName
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+    const dayLabel = loc.tripDay != null ? `${loc.tripDay}일차` : '';
+    const info = new kakao.maps.InfoWindow({
+      content: `<div style="padding:6px 10px;font-size:13px;font-weight:600;white-space:nowrap">${order ? `${order}. ` : ''}${name}${dayLabel ? `<span style="font-weight:500;color:#666;margin-left:6px">${dayLabel}</span>` : ''}</div>`,
+    });
+
+    kakao.maps.event.addListener(el, 'click', () => {
+      if (openInfoWindow) openInfoWindow.close();
+      info.open(map, overlay);
+      openInfoWindow = info;
+      onMarkerSelect?.(loc.id);
+    });
+  });
+
+  if (!bounds.isEmpty()) {
+    map.setBounds(bounds);
+  }
+
+  return { map, bounds };
+}
+
+async function resolvePlotPoints(locations) {
+  const withCoord = locations
+    .filter(hasCoord)
+    .map(l => ({
+      ...l,
+      latitude: Number(l.latitude),
+      longitude: Number(l.longitude),
+    }));
+
+  const needAddr = locations.filter(l => !hasCoord(l) && pickAddress(l));
+  if (!needAddr.length) {
+    return { points: withCoord, skipped: 0 };
+  }
+
+  const byId = new Map(needAddr.map(l => [String(l.id), l]));
+  let resolved = [];
+
+  try {
+    const batch = await geocodeAddressesBatch(
+      needAddr.map(l => ({ id: l.id, address: pickAddress(l) })),
+    );
+    for (const row of batch) {
+      if (row.ok && row.latitude != null && row.longitude != null) {
+        const loc = byId.get(String(row.id));
+        if (loc) {
+          resolved.push({
+            ...loc,
+            latitude: row.latitude,
+            longitude: row.longitude,
+          });
+          byId.delete(String(row.id));
+        }
+      }
+    }
+  } catch {
+    /* REST 실패 시 클라이언트 지오코더로 폴백 */
+  }
+
+  if (byId.size > 0) {
+    try {
+      const kakao = await loadKakaoSdk();
+      for (const loc of byId.values()) {
+        const pos = await geocodeAddressWithKakao(kakao, pickAddress(loc));
+        if (pos) {
+          resolved.push({
+            ...loc,
+            latitude: pos.lat,
+            longitude: pos.lng,
+          });
+        }
+      }
+    } catch {
+      /* SDK도 실패하면 좌표 있는 것만 표시 */
+    }
+  }
+
+  const points = [...withCoord, ...resolved];
+  return {
+    points,
+    skipped: locations.length - points.length,
+  };
+}
+
 export default function MultiMarkerMap({
   locations = [],
   onMarkerSelect,
@@ -134,11 +175,14 @@ export default function MultiMarkerMap({
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const boundsRef = useRef(null);
+  const onMarkerSelectRef = useRef(onMarkerSelect);
   const [error, setError] = useState('');
   const [noCoordCount, setNoCoordCount] = useState(0);
-  /** 좌표 보유 + 주소 지오코딩 성공분 */
   const [plotPoints, setPlotPoints] = useState([]);
   const [phase, setPhase] = useState('idle');
+  const [useFallbackMap, setUseFallbackMap] = useState(false);
+
+  onMarkerSelectRef.current = onMarkerSelect;
 
   const locationsKey = useMemo(
     () =>
@@ -166,65 +210,29 @@ export default function MultiMarkerMap({
 
     setPhase('resolving');
     setError('');
+    setPlotPoints([]);
+    setUseFallbackMap(false);
 
     (async () => {
-      const withCoord = locations
-        .filter(hasCoord)
-        .map(l => ({
-          ...l,
-          latitude: Number(l.latitude),
-          longitude: Number(l.longitude),
-        }));
+      const { points, skipped } = await resolvePlotPoints(locations);
+      if (cancelled) return;
 
-      const needAddr = locations.filter(l => !hasCoord(l) && pickAddress(l));
+      setNoCoordCount(skipped);
+      setPlotPoints(points);
 
-      let points = [...withCoord];
-
-      try {
-        if (needAddr.length) {
-          const kakao = await loadKakaoSdk();
-          if (cancelled) return;
-          for (const loc of needAddr) {
-            const pos = await geocodeAddress(kakao, pickAddress(loc));
-            if (cancelled) return;
-            if (pos) {
-              points.push({
-                ...loc,
-                latitude: pos.lat,
-                longitude: pos.lng,
-              });
-            }
-          }
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setPlotPoints(withCoord);
-          setPhase(withCoord.length ? 'resolved' : 'empty');
-          setNoCoordCount(locations.length - withCoord.length);
-          if (!withCoord.length) {
-            const msg = String(err?.message || '');
-            if (msg.includes('sdk_blocked')) {
-              setError('카카오 SDK 로드가 차단되었습니다.');
-            } else if (msg.includes('sdk_timeout')) {
-              setError('카카오 SDK 로드 시간이 초과되었습니다.');
-            } else {
-              setError('지도를 준비하지 못했습니다.');
-            }
-          }
-        }
+      if (!points.length) {
+        setError('주소를 지도 위치로 찾지 못했습니다.');
+        setPhase('empty');
         return;
       }
 
-      if (cancelled) return;
-      setNoCoordCount(locations.length - points.length);
-      setPlotPoints(points);
-      setPhase(points.length ? 'resolved' : 'empty');
+      setPhase('resolved');
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [locationsKey]);
+  }, [locationsKey, locations]);
 
   const mapMarkersKey = useMemo(
     () =>
@@ -233,110 +241,74 @@ export default function MultiMarkerMap({
   );
 
   useEffect(() => {
-    if (phase !== 'resolved' || !plotPoints.length || error) {
-      return;
+    if (phase !== 'resolved' || !plotPoints.length) {
+      return undefined;
     }
 
     let active = true;
+    let relayoutTimer = null;
 
-    loadKakaoSdk()
-      .then(kakao => {
-        if (!active || !mapRef.current) return;
+    const tryPaint = attempt => {
+      if (!active) return;
+      const el = mapRef.current;
+      if (!el) {
+        if (attempt < 20) {
+          relayoutTimer = window.setTimeout(() => tryPaint(attempt + 1), 50);
+        }
+        return;
+      }
 
-        mapRef.current.innerHTML = '';
-
-        const map = new kakao.maps.Map(mapRef.current, {
-          center: new kakao.maps.LatLng(36.5, 127.5),
-          level: 10,
-        });
-        mapInstanceRef.current = map;
-
-        const bounds = new kakao.maps.LatLngBounds();
-        let openInfoWindow = null;
-
-        const overlays = [];
-
-        plotPoints.forEach(loc => {
-          const position = new kakao.maps.LatLng(
-            Number(loc.latitude),
-            Number(loc.longitude),
+      loadKakaoSdk()
+        .then(kakao => {
+          if (!active || !mapRef.current) return;
+          setUseFallbackMap(false);
+          const painted = paintMap(
+            kakao,
+            mapRef.current,
+            plotPoints,
+            id => onMarkerSelectRef.current?.(id),
           );
-          bounds.extend(position);
+          mapInstanceRef.current = painted.map;
+          boundsRef.current = painted.bounds;
 
-          const order = loc.mapOrder != null ? String(loc.mapOrder) : '';
-          const bg = dayColor(loc.tripDay);
-          const el = document.createElement('div');
-          el.className = 'trip-map-marker-pin';
-          el.style.cssText = [
-            'width:28px;height:28px;border-radius:50%',
-            `background:${bg}`,
-            'color:#fff;font-size:12px;font-weight:800',
-            'display:flex;align-items:center;justify-content:center',
-            'border:2px solid #fff',
-            'box-shadow:0 2px 8px rgba(0,0,0,0.25)',
-            'cursor:pointer',
-            'font-family:inherit',
-          ].join(';');
-          el.textContent = order || '•';
-
-          const overlay = new kakao.maps.CustomOverlay({
-            position,
-            content: el,
-            yAnchor: 1.1,
-            zIndex: Number(loc.mapOrder) || 1,
+          [0, 180, 420, 800].forEach(delay => {
+            window.setTimeout(() => {
+              if (!active || !mapInstanceRef.current) return;
+              mapInstanceRef.current.relayout();
+              if (boundsRef.current && !boundsRef.current.isEmpty()) {
+                mapInstanceRef.current.setBounds(boundsRef.current);
+              }
+            }, delay);
           });
-          overlay.setMap(map);
-          overlays.push(overlay);
-
-          const rawName = String(loc.name || '장소');
-          const name = rawName
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/"/g, '&quot;');
-          const dayLabel =
-            loc.tripDay != null ? `${loc.tripDay}일차` : '';
-          const info = new kakao.maps.InfoWindow({
-            content: `<div style="padding:6px 10px;font-size:13px;font-weight:600;white-space:nowrap">${order ? `${order}. ` : ''}${name}${dayLabel ? `<span style="font-weight:500;color:#666;margin-left:6px">${dayLabel}</span>` : ''}</div>`,
-          });
-
-          kakao.maps.event.addListener(el, 'click', () => {
-            if (openInfoWindow) openInfoWindow.close();
-            info.open(map, overlay);
-            openInfoWindow = info;
-            onMarkerSelect?.(loc.id);
-          });
+        })
+        .catch(err => {
+          if (!active) return;
+          if (plotPoints.length > 0 && buildKakaoMapCenterUrl(plotPoints)) {
+            setUseFallbackMap(true);
+            setError('');
+            return;
+          }
+          const msg = String(err?.message || '');
+          if (msg.includes('sdk_blocked')) {
+            setError('카카오 SDK 로드가 차단되었습니다.');
+          } else if (msg.includes('sdk_timeout')) {
+            setError('카카오 SDK 로드 시간이 초과되었습니다.');
+          } else {
+            setError('지도를 불러오지 못했습니다.');
+          }
         });
+    };
 
-        mapInstanceRef.current._tripOverlays = overlays;
-
-        boundsRef.current = bounds;
-        if (!bounds.isEmpty()) map.setBounds(bounds);
-
-        [0, 180, 420, 800].forEach(delay => {
-          setTimeout(() => {
-            if (!active || !mapInstanceRef.current) return;
-            mapInstanceRef.current.relayout();
-            if (boundsRef.current && !boundsRef.current.isEmpty()) {
-              mapInstanceRef.current.setBounds(boundsRef.current);
-            }
-          }, delay);
-        });
-      })
-      .catch(err => {
-        if (!active) return;
-        const msg = String(err?.message || '');
-        if (msg.includes('sdk_blocked')) setError('카카오 SDK 로드가 차단되었습니다.');
-        else if (msg.includes('sdk_timeout')) setError('카카오 SDK 로드 시간이 초과되었습니다.');
-        else setError('지도를 불러오지 못했습니다.');
-      });
+    tryPaint(0);
 
     return () => {
       active = false;
+      if (relayoutTimer) window.clearTimeout(relayoutTimer);
     };
-  }, [mapMarkersKey, plotPoints, phase, error]);
+  }, [mapMarkersKey, phase, plotPoints]);
 
   useEffect(() => {
-    if (!mapRef.current) return undefined;
+    if (!mapRef.current || phase !== 'resolved') return undefined;
 
     const relayout = () => {
       if (!mapInstanceRef.current) return;
@@ -354,7 +326,12 @@ export default function MultiMarkerMap({
       ro.disconnect();
       window.removeEventListener('resize', relayout);
     };
-  }, [mapMarkersKey]);
+  }, [mapMarkersKey, phase]);
+
+  const fallbackMapUrl = useMemo(
+    () => buildKakaoMapCenterUrl(plotPoints),
+    [plotPoints],
+  );
 
   if (!locations.length) {
     return <p className="ui-empty">표시할 장소가 없어요.</p>;
@@ -379,10 +356,7 @@ export default function MultiMarkerMap({
         {error ? (
           <p className="multi-marker-map-error">{error}</p>
         ) : (
-          <p className="ui-empty">
-            지도에 표시할 좌표·주소 정보가 없어요. 장소 데이터에 주소가 있는지 확인해
-            주세요.
-          </p>
+          <p className="ui-empty">지도에 표시할 주소 정보가 없어요.</p>
         )}
       </div>
     );
@@ -393,16 +367,47 @@ export default function MultiMarkerMap({
       <p className="multi-marker-map-title">
         📍 현재 일정 {plotPoints.length}개 장소
       </p>
-      {error ? (
-        <p className="multi-marker-map-error">{error}</p>
+      {useFallbackMap && fallbackMapUrl ? (
+        <>
+          <p className="multi-marker-map-skipped" style={{ marginBottom: 8 }}>
+            앱 내 지도 대신 카카오맵 미리보기를 표시합니다. 장소별로 열려면 아래 링크를 눌러 주세요.
+          </p>
+          <div className="kakao-map-canvas kakao-map-fallback-viewport">
+            <iframe
+              src={fallbackMapUrl}
+              title="일정 지도 미리보기"
+              className="kakao-map-iframe"
+              loading="lazy"
+              referrerPolicy="strict-origin-when-cross-origin"
+            />
+          </div>
+          <ul className="multi-marker-map-fallback-list">
+            {plotPoints.map(p => {
+              const href = buildKakaoPlaceUrl(p);
+              if (!href) return null;
+              return (
+                <li key={p.id ?? p.name}>
+                  <a href={href} target="_blank" rel="noreferrer">
+                    {p.name || '장소'}
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       ) : (
-        <div ref={mapRef} className="multi-marker-map-canvas" />
+        <>
+          {error ? (
+            <p className="multi-marker-map-error">{error}</p>
+          ) : null}
+          <div ref={mapRef} className="multi-marker-map-canvas" />
+        </>
       )}
-      {noCoordCount > 0 && (
+      {noCoordCount > 0 ? (
         <p className="multi-marker-map-skipped">
-          좌표·주소 검색으로 표시 못한 장소: {noCoordCount}개
+          주소 검색으로 표시 못한 장소: {noCoordCount}개
         </p>
-      )}
+      ) : null}
     </div>
   );
 }

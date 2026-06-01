@@ -1,4 +1,5 @@
 import { isClientPlaceholderImageUrl } from './placeholderImage';
+import { canonicalProvince } from './provinceNames';
 
 /**
  * 백엔드가 돌려주는 상대 경로(`/static/...`)는 Vite(dev:5173)가 아니라 API 서버에서 서빙됩니다.
@@ -36,8 +37,10 @@ export function normalizeRegionMediaFields(region) {
     return region;
   }
   const resolved = resolveBackendMediaUrl(region.imageUrl);
+  const province = canonicalProvince(region.province) || region.province;
   return {
     ...region,
+    province: province || region.province,
     imageUrl: isClientPlaceholderImageUrl(resolved) ? '' : resolved,
   };
 }

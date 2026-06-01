@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from app.utils.province_names import matches_special_province_city, province_tokens_for_filter
+
 if TYPE_CHECKING:
     from app.repositories.places_store import Place
 
@@ -21,6 +23,9 @@ _SIDEBAR_CITY_ADDRESS_TOKENS: dict[str, tuple[str, ...]] = {
     "충주": ("충주시",),
     "광주": ("광주광역시", "광주시"),
     "전주": ("전주시",),
+    "군산": ("군산시",),
+    "익산": ("익산시",),
+    "남원": ("남원시",),
     "여수": ("여수시",),
     "순천": ("순천시",),
     "목포": ("목포시",),
@@ -33,9 +38,13 @@ _SIDEBAR_CITY_ADDRESS_TOKENS: dict[str, tuple[str, ...]] = {
     "서귀포": ("서귀포시",),
 }
 
-# 도 단위 (사이드바 '경기' 등)
+# 도 단위 (사이드바 '경기', '강원특별자치도' 등)
 _SIDEBAR_PROVINCE_TOKENS: dict[str, tuple[str, ...]] = {
     "경기": ("경기도",),
+    "강원": province_tokens_for_filter("강원"),
+    "강원특별자치도": province_tokens_for_filter("강원특별자치도"),
+    "전북": province_tokens_for_filter("전북"),
+    "전북특별자치도": province_tokens_for_filter("전북특별자치도"),
 }
 
 
@@ -100,6 +109,16 @@ def place_matches_sidebar_locality(
     base = label.replace("시", "").replace("군", "").strip()
     if reg in (label, base, f"{base}시", f"{base}군"):
         return True
+
+    if matches_special_province_city(
+        label=label,
+        region=region,
+        province=province,
+        address=address,
+        address_tokens=tokens,
+    ):
+        return True
+
     return False
 
 

@@ -34,4 +34,9 @@ def trip_chat(payload: TripChatRequest):
         payload.excludeLocationId,
         replan=bool(payload.replan),
         recent_messages=recent,
+        current_schedule=(
+            [e.model_dump() for e in payload.currentSchedule]
+            if payload.currentSchedule
+            else None
+        ),
     )

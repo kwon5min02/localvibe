@@ -2,6 +2,14 @@
  * 사이드바 지역 클릭 — 장소명이 아닌 주소·region·province만 매칭 (백엔드 sidebar_location.py와 동일 규칙).
  */
 
+import {
+  canonicalProvince,
+  GANGWON_PROVINCE_TOKENS,
+  JEONBUK_PROVINCE_TOKENS,
+  matchesSpecialProvinceCity,
+  provinceTokensForFilter,
+} from './provinceNames';
+
 const SIDEBAR_CITY_ADDRESS_TOKENS = {
   서울: ['서울특별시', '서울시'],
   인천: ['인천광역시', '인천시'],
@@ -15,6 +23,9 @@ const SIDEBAR_CITY_ADDRESS_TOKENS = {
   충주: ['충주시'],
   광주: ['광주광역시', '광주시'],
   전주: ['전주시'],
+  군산: ['군산시'],
+  익산: ['익산시'],
+  남원: ['남원시'],
   여수: ['여수시'],
   순천: ['순천시'],
   목포: ['목포시'],
@@ -29,6 +40,10 @@ const SIDEBAR_CITY_ADDRESS_TOKENS = {
 
 const SIDEBAR_PROVINCE_TOKENS = {
   경기: ['경기도'],
+  강원: GANGWON_PROVINCE_TOKENS,
+  강원특별자치도: GANGWON_PROVINCE_TOKENS,
+  전북: JEONBUK_PROVINCE_TOKENS,
+  전북특별자치도: JEONBUK_PROVINCE_TOKENS,
 };
 
 function compact(s) {
@@ -53,7 +68,7 @@ export function placeMatchesSidebarLocality(regionRow, locality) {
 
   const addr = compact(regionRow.address);
   const reg = String(regionRow.region || '').trim();
-  const prov = compact(regionRow.province);
+  const prov = compact(canonicalProvince(regionRow.province) || regionRow.province);
   const addressRaw = String(regionRow.address || '');
 
   if (SIDEBAR_PROVINCE_TOKENS[label]) {
@@ -77,7 +92,11 @@ export function placeMatchesSidebarLocality(regionRow, locality) {
   if (tokens.some(tok => compact(tok) && addr.includes(compact(tok)))) return true;
 
   const base = label.replace(/시$/, '').replace(/군$/, '').trim();
-  return [label, base, `${base}시`, `${base}군`].includes(reg);
+  if ([label, base, `${base}시`, `${base}군`].includes(reg)) return true;
+
+  if (matchesSpecialProvinceCity(regionRow, label, tokens)) return true;
+
+  return false;
 }
 
 export function filterRegionsBySidebarLocation(regions, locality) {

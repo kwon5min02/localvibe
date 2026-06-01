@@ -11,6 +11,57 @@ export function periodForSlotIndex(indexInDay) {
   return PERIOD_LABELS[indexInDay % PERIOD_LABELS.length];
 }
 
+/** 맛집·카페 등만 느슨한 오전/오후 힌트 (확정 시각 아님). 없으면 순서만 표시 */
+export function inferSoftPeriodHint(loc) {
+  if (!loc) {
+    return '';
+  }
+  const text = [
+    loc.name,
+    loc.summary,
+    loc.category,
+    ...(Array.isArray(loc.recommendedBusinesses) ? loc.recommendedBusinesses : []),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  if (/맛집|식당|국밥|삼겹|회\b|음식|레스토랑|먹거리/.test(text)) {
+    return '오후';
+  }
+  if (/카페|커피|디저트|베이커|브런치|빵집/.test(text)) {
+    return '오전';
+  }
+  if (/야경|낮술|주점|바\b|펍/.test(text)) {
+    return '오후';
+  }
+  return '';
+}
+
+/** 일차 내 오전/오후/순서만 구역으로 묶기 (타임라인 UI) */
+export function groupDayItemsByPeriodBand(items, rawLocations) {
+  const bands = [
+    { key: 'morning', label: '오전', hint: '', items: [] },
+    { key: 'afternoon', label: '오후', hint: '', items: [] },
+    { key: 'flex', label: '순서', hint: '', items: [] },
+  ];
+  const bandByKey = Object.fromEntries(bands.map(b => [b.key, b]));
+
+  items.forEach(node => {
+    const loc = rawLocations[node.renderIndex];
+    const period = displayPeriod(loc || { tripTime: node.period });
+    if (period === '오전') {
+      bandByKey.morning.items.push(node);
+    } else if (period === '오후') {
+      bandByKey.afternoon.items.push(node);
+    } else {
+      bandByKey.flex.items.push(node);
+    }
+  });
+
+  return bands.filter(b => b.items.length > 0);
+}
+
 export function normalizePeriodLabel(time, slot) {
   const t = String(time || '').trim();
   if (t === '오전' || t === '오후') {
@@ -55,7 +106,6 @@ export function displayOrderLabel(indexInDay) {
   return `${Number(indexInDay) + 1}번째`;
 }
 
-/** 일차 헤더용 오전/오후 요약 */
 export function formatDayPeriodSummary(items) {
   if (!Array.isArray(items) || items.length === 0) {
     return '';
@@ -138,11 +188,13 @@ function finalizeItineraryOrder(locations, days) {
   for (let day = 1; day <= dayCount; day += 1) {
     const bucket = buckets.get(day) || [];
     bucket.forEach((loc, slotIndex) => {
+      const hint = inferSoftPeriodHint(loc);
       ordered.push({
         ...loc,
         tripDay: day,
-        tripTime: periodForSlotIndex(slotIndex),
-        tripSlot: slotIndex % 2 === 0 ? 'morning' : 'afternoon',
+        tripTime: hint || '',
+        tripSlot: hint === '오전' ? 'morning' : hint === '오후' ? 'afternoon' : '',
+        tripOrder: slotIndex + 1,
         scheduleAdjusted: true,
       });
     });
@@ -151,11 +203,13 @@ function finalizeItineraryOrder(locations, days) {
   for (const [day, bucket] of buckets.entries()) {
     if (day > dayCount) {
       bucket.forEach((loc, slotIndex) => {
+        const hint = inferSoftPeriodHint(loc);
         ordered.push({
           ...loc,
           tripDay: day,
-          tripTime: periodForSlotIndex(slotIndex),
-          tripSlot: slotIndex % 2 === 0 ? 'morning' : 'afternoon',
+          tripTime: hint || '',
+          tripSlot: hint === '오전' ? 'morning' : hint === '오후' ? 'afternoon' : '',
+          tripOrder: slotIndex + 1,
           scheduleAdjusted: true,
         });
       });
@@ -293,6 +347,20 @@ export function formatScheduleAsText(schedule) {
       });
     });
   return lines.join('\n');
+}
+
+/** /api/chat/trip currentSchedule 페이로드 */
+export function buildCurrentSchedulePayload(locations) {
+  return (locations || [])
+    .filter(loc => loc?.id != null)
+    .map(loc => ({
+      day: Number(loc.tripDay) || 1,
+      placeId: Number(loc.id),
+      placeName: String(loc.name || ''),
+      time: String(loc.tripTime || ''),
+      slot: String(loc.tripSlot || ''),
+      category: String(loc.category || ''),
+    }));
 }
 
 export const TRIP_LOADING_PHASES = [

@@ -26,15 +26,6 @@ class TripChatTurn(BaseModel):
     text: str
 
 
-class TripChatRequest(BaseModel):
-    message: str
-    tripDuration: Optional[TripDuration] = None
-    currentLocationIds: Optional[list[int]] = None
-    excludeLocationId: Optional[int] = None
-    replan: Optional[bool] = False
-    recentMessages: Optional[list[TripChatTurn]] = None
-
-
 class TripScheduleEntry(BaseModel):
     day: int
     slot: str
@@ -42,6 +33,16 @@ class TripScheduleEntry(BaseModel):
     placeId: int
     placeName: str = ""
     category: str = ""
+
+
+class TripChatRequest(BaseModel):
+    message: str
+    tripDuration: Optional[TripDuration] = None
+    currentLocationIds: Optional[list[int]] = None
+    currentSchedule: Optional[list[TripScheduleEntry]] = None
+    excludeLocationId: Optional[int] = None
+    replan: Optional[bool] = False
+    recentMessages: Optional[list[TripChatTurn]] = None
 
 
 class TripChatResponse(BaseModel):

@@ -93,7 +93,7 @@ def list_regions() -> list[Region]:
     return [_region_from_row(row) for row in region_rows]
 
 
-def list_regions_in_location(locality: str, *, limit: int = 48) -> list[Region]:
+def list_regions_in_location(locality: str, *, limit: int = 120) -> list[Region]:
     """사이드바 지역 클릭 — 주소·행정구역 기준 장소 목록 (이름 매칭 없음)."""
     label = str(locality or "").strip()
     if len(label) < 2:

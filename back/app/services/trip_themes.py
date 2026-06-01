@@ -239,7 +239,14 @@ def _extract_must_visit(text: str, compact: str, themes: list[str]) -> list[str]
 
 def message_requests_food_theme(user_message: str) -> bool:
     p = detect_trip_theme_profile(user_message)
-    return "food" in p.themes or "bakery" in p.themes
+    return "food" in p.themes or "bakery" in p.themes or "cafe" in p.themes
+
+
+def message_requests_cafe_theme(user_message: str) -> bool:
+    text = str(user_message or "")
+    if re.search(r"카페|커피|브런치|디저트|카페투어", text):
+        return True
+    return "cafe" in detect_trip_theme_profile(text).themes
 
 
 def theme_boosted_search_query(user_message: str, profile: TripThemeProfile | None = None) -> str:

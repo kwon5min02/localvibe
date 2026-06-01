@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { createPortal, flushSync } from 'react-dom';
 import ComparisonModal from './ComparisonModal';
+import TripVisualModal from './TripVisualModal';
 import {
+  buildCurrentSchedulePayload,
   getMaxLocationsByDuration,
   TRIP_ITEMS_PER_DAY_DEFAULT,
   TRIP_LOADING_PHASES,
@@ -67,10 +69,15 @@ function isTripVisualRequest(text) {
   if (/비교|vs\b|VS\b|차이|대비/.test(t)) {
     return true;
   }
-  // 갤러리·지도 기능 비활성화
-  // if (/사진|이미지|보고\s*싶|갤러리/.test(t)) return true;
-  // if (/(지도|마커|맵)/.test(t) && /(보여|표시|띄워|알려|찍|볼|줄래|까|펼쳐)/.test(t)) return true;
-  // if (/(위치|어디)/.test(t) && /(지도|맵|보여|알려|찍|볼|줄래|까)/.test(t)) return true;
+  if (/사진|이미지|갤러리|보고\s*싶/.test(t)) {
+    return true;
+  }
+  if (
+    /(지도|마커|맵|위치)/.test(t) &&
+    /(보여|표시|띄워|알려|찍|볼|줄래|까|펼쳐|확인|열어)/.test(t)
+  ) {
+    return true;
+  }
   if (
     /(저|그거|그\s|방금|아까|직전|위에|아까\s*말한|방금\s*보여|방금\s*추천)/.test(t) &&
     /(비교|vs)/.test(t)
@@ -124,18 +131,14 @@ async function callVisualAction(payload) {
   return response.json();
 }
 
-const HELP_TEXT = `사용 가능한 기능을 알려드릴게요!
+const HELP_TEXT = `말씀하신 뜻을 읽고 일정을 맞춰 드려요. 예시만 참고하세요.
 
-장소 추천 & 일정 관리
-• "[지역] [테마] 추천해줘" → 로드맵에 장소 추가
-• "[N]일" / "[N]박 [N]일" → 여행 기간 설정
-• "[N]일 더 추가해줘" → 기간 연장
-• "[장소명] 제외해줘" → 장소 삭제
-• "[장소명] 말고 다른 곳으로 바꿔줘" → 장소 교체
-• "코스 다시 짜줘" / "장소 교체해서 보여줘" → 말한 조건으로 로드맵 전체 새로 구성
+• 지역·기간·분위기로 추천·일정 만들기
+• 장소 이름 없이도 "절은 빼고 카페 위주", "2일차만 여유롭게"처럼 조정
+• 특정 장소만 빼기·바꾸기 ("○○ 말고 △△")
+• 코스 전체를 다시 짜고 싶을 때는 그렇게 말씀해 주세요
 
-시각화
-• "[장소A] vs [장소B] 비교해줘" → 두 장소 비교 카드 팝업`;
+비교·사진 갤러리도 채팅으로 요청할 수 있어요.`;
 
 const HELP_PATTERNS = [
   /도움말|도움|헬프|help/i,
@@ -151,6 +154,14 @@ function isHelpIntent(text) {
 
 const ACTION_LABEL_MAP = {
   comparePlaces: '비교 보기',
+  showMap: '지도 보기',
+  showImageGallery: '사진 갤러리',
+};
+
+const VISUAL_TITLE_MAP = {
+  comparePlaces: '장소 비교',
+  showMap: '일정 지도',
+  showImageGallery: '이미지 갤러리',
 };
 
 /**
@@ -282,18 +293,10 @@ function TripChatPanelInner({
     prevCountRef.current = curr;
   }, [currentLocations.length]);
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    const trimmed = input.trim();
+  async function sendMessage(trimmed) {
     if (!trimmed || isLoading) {
       return;
     }
-
-    // Ensure the user's bubble appears immediately before additional intent parsing/network work.
-    flushSync(() => {
-      setMessages(prev => [...prev, { role: 'user', text: trimmed }]);
-      setInput('');
-    });
 
     // 도움말은 로컬에서 즉시 처리
     if (isHelpIntent(trimmed)) {
@@ -349,6 +352,7 @@ function TripChatPanelInner({
             ? { nights: durationForRequest.nights, days: durationForRequest.days }
             : null,
           currentLocationIds: currentLocations.map(loc => loc.id),
+          currentSchedule: buildCurrentSchedulePayload(currentLocations),
           recentMessages: buildRecentMessagesPayload(chatHistoryForTrip),
         }),
       });
@@ -375,8 +379,8 @@ function TripChatPanelInner({
         return;
       }
 
-      // replan: 전체 교체
-      if (action === 'replan') {
+      // refine / replan: 일정 전체 반영 (테마·제외 조정 포함)
+      if (action === 'refine' || action === 'replan') {
         if (Array.isArray(data?.recommendedRegionIds) && data.recommendedRegionIds.length > 0) {
           const cap = activeDuration?.maxLocations ?? data.recommendedRegionIds.length;
           suppressRoadmapEchoRef.current = true;
@@ -385,13 +389,14 @@ function TripChatPanelInner({
             data.schedule ?? null,
           );
           const answer =
-            String(data?.answer || '').trim() || '일정을 새로 구성했어요.';
+            String(data?.answer || '').trim() ||
+            (action === 'refine' ? '일정을 조정했어요.' : '일정을 새로 구성했어요.');
           setMessages(prev => [
             ...prev,
             {
               role: 'assistant',
               text: answer,
-              action: 'replan',
+              action,
             },
           ]);
         } else {
@@ -404,8 +409,36 @@ function TripChatPanelInner({
       if (action === 'remove') {
         const targetId = data?.excludedLocationId;
         const currentRoadmapIds = new Set(currentLocations.map(loc => loc.id));
+        if (
+          Array.isArray(data?.recommendedRegionIds) &&
+          data.recommendedRegionIds.length > 0
+        ) {
+          const cap = activeDuration?.maxLocations ?? data.recommendedRegionIds.length;
+          suppressRoadmapEchoRef.current = true;
+          onTripLocationsReplaceAll?.(
+            data.recommendedRegionIds.slice(0, cap),
+            data.schedule ?? null,
+          );
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              text: String(data?.answer || '').trim() || '일정을 조정했어요.',
+              action: 'refine',
+            },
+          ]);
+          return;
+        }
         if (!targetId || !currentRoadmapIds.has(targetId)) {
-          setMessages(prev => [...prev, { role: 'assistant', text: '현재 일정에 없는 장소예요. 로드맵에 있는 장소 이름을 말씀해 주세요.' }]);
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              text:
+                String(data?.answer || '').trim() ||
+                '그 장소는 일정에 없어요. 「절 빼고 카페·식당 넣어줘」처럼 말씀해 주시면 일정 전체를 조정할게요.',
+            },
+          ]);
         } else {
           manualEditEchoRef.current = true;
           onRemoveLocation?.(targetId);
@@ -419,15 +452,52 @@ function TripChatPanelInner({
 
       // replace: 장소 교체
       if (action === 'replace') {
+        if (
+          !data?.excludedLocationId &&
+          Array.isArray(data?.recommendedRegionIds) &&
+          data.recommendedRegionIds.length > 0
+        ) {
+          const cap = activeDuration?.maxLocations ?? data.recommendedRegionIds.length;
+          suppressRoadmapEchoRef.current = true;
+          onTripLocationsReplaceAll?.(
+            data.recommendedRegionIds.slice(0, cap),
+            data.schedule ?? null,
+          );
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              text: String(data?.answer || '').trim() || '일정을 조정했어요.',
+              action: 'refine',
+            },
+          ]);
+          return;
+        }
         if (!data?.excludedLocationId) {
-          setMessages(prev => [...prev, { role: 'assistant', text: '현재 일정에 없는 장소예요. 로드맵에 있는 장소 이름을 말씀해 주세요.' }]);
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              text:
+                String(data?.answer || '').trim() ||
+                '바꿀 장소 이름을 일정에서 찾지 못했어요. 「○○ 말고 △△」처럼 적어 주시거나, 「절 빼고 카페 넣어줘」처럼 말씀해 주세요.',
+            },
+          ]);
           return;
         }
         const oldId = data.excludedLocationId;
         const newId = data?.recommendedRegionIds?.[0];
         const currentRoadmapIds = new Set(currentLocations.map(loc => loc.id));
         if (!currentRoadmapIds.has(oldId)) {
-          setMessages(prev => [...prev, { role: 'assistant', text: '현재 일정에 없는 장소예요. 로드맵에 있는 장소 이름을 말씀해 주세요.' }]);
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              text:
+                String(data?.answer || '').trim() ||
+                '일정에 없는 장소예요. 로드맵에 있는 이름으로 다시 말씀해 주세요.',
+            },
+          ]);
         } else if (newId && newId !== oldId) {
           suppressRoadmapEchoRef.current = true;
           onReplaceLocation?.(oldId, newId, data.schedule ?? null);
@@ -519,6 +589,20 @@ function TripChatPanelInner({
     }
   }
 
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const trimmed = input.trim();
+    if (!trimmed || isLoading) {
+      return;
+    }
+
+    flushSync(() => {
+      setMessages(prev => [...prev, { role: 'user', text: trimmed }]);
+      setInput('');
+    });
+    await sendMessage(trimmed);
+  }
+
   function handleCancelLoading() {
     chatAbortRef.current?.abort();
     chatAbortRef.current = null;
@@ -603,12 +687,33 @@ function TripChatPanelInner({
       {visualPopup?.componentType === 'comparePlaces' ? (
         <ComparisonModal
           items={visualPopup.uiData?.items ?? []}
+          comparisonSummary={visualPopup.uiData?.comparisonSummary ?? ''}
+          matrixRows={visualPopup.uiData?.matrixRows ?? []}
           onClose={() => setVisualPopup(null)}
           onSelectPlace={
             onComparePlaceSelect
               ? item => {
                   if (item?.id != null) {
                     onComparePlaceSelect(item.id);
+                    setVisualPopup(null);
+                  }
+                }
+              : undefined
+          }
+        />
+      ) : null}
+      {visualPopup?.componentType === 'showMap' ||
+      visualPopup?.componentType === 'showImageGallery' ? (
+        <TripVisualModal
+          componentType={visualPopup.componentType}
+          uiData={visualPopup.uiData}
+          title={VISUAL_TITLE_MAP[visualPopup.componentType] ?? '시각화'}
+          onClose={() => setVisualPopup(null)}
+          onMarkerSelect={
+            onComparePlaceSelect
+              ? loc => {
+                  if (loc?.id != null) {
+                    onComparePlaceSelect(loc.id);
                     setVisualPopup(null);
                   }
                 }
@@ -624,8 +729,8 @@ function TripChatPanelInner({
           type="text"
           placeholder={
             tripDuration
-              ? '예: 경주 중심으로 추천해줘, 불국사 추가해줘'
-              : '예: 2박 3일, 3일, 1박'
+              ? '자유롭게 말씀해 주세요 (예: 2일차만 맛집 위주, 절 빼고 여유롭게)'
+              : '예: 부산 2박 3일, 친구랑 맛집·카페 위주'
           }
           value={input}
           onChange={event => setInput(event.target.value)}

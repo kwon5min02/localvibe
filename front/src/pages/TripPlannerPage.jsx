@@ -379,9 +379,6 @@ function TripPlannerPage({
       <div className="trip-planner-header">
         <div>
           <h2>여행 플래너</h2>
-          <p className="trip-planner-subtitle">
-            채팅·검색으로 채우고, 드래그로 순서·일차를 조정하세요.
-          </p>
         </div>
         <div className="trip-planner-stats">
           {tripDuration ? (

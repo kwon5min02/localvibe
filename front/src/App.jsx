@@ -47,7 +47,10 @@ function readPersistedGalleryRegions() {
     if (!raw) return null;
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr) || arr.length === 0) return null;
-    return arr.map((r) => normalizeRegionMediaFields({ ...r }));
+    return pickOrderedFeedItems(
+      arr.map((r) => normalizeRegionMediaFields({ ...r })),
+      FEED_SIZE,
+    );
   } catch {
     return null;
   }
@@ -62,37 +65,61 @@ function clearGalleryVectorLock(lockRef) {
   if (lockRef) lockRef.current = false;
 }
 
+function dedupeFeedPick(source, picked, usedName, usedImg, size) {
+  for (const item of source) {
+    const nk = normalizeTextKey(item?.name);
+    const ik = normalizeImageKey(item?.imageUrl);
+    if (!nk || usedName.has(nk) || (ik && usedImg.has(ik))) continue;
+    picked.push(item);
+    usedName.add(nk);
+    if (ik) usedImg.add(ik);
+    if (picked.length >= size) return picked;
+  }
+  for (const item of source) {
+    const nk = normalizeTextKey(item?.name);
+    if (!nk || usedName.has(nk)) continue;
+    picked.push(item);
+    usedName.add(nk);
+    if (picked.length >= size) break;
+  }
+  return picked.slice(0, size);
+}
+
+/** Fisher–Yates 셔플 후 피드용 N개 추출 (사이드바 지역마다 다른 9장) */
+function pickFeedItems(items, size = FEED_SIZE) {
+  if (!Array.isArray(items) || !items.length) return [];
+  const shuffled = [...items];
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return dedupeFeedPick(shuffled, [], new Set(), new Set(), size);
+}
+
+/** API 유사도·점수 순 유지, 상위 N개만 (갤러리 벡터 검색용 3×3) */
+function pickOrderedFeedItems(items, size = FEED_SIZE) {
+  if (!Array.isArray(items) || !items.length) return [];
+  return dedupeFeedPick(items, [], new Set(), new Set(), size);
+}
+
 const REGION_TREE = [
   { id: 'metro',       label: '수도권', children: ['서울', '경기', '인천'] },
-  { id: 'gangwon',     label: '강원',   children: ['강릉', '춘천', '원주', '속초'] },
+  { id: 'gangwon',     label: '강원특별자치도', regionFilter: '강원특별자치도', children: ['강릉', '춘천', '원주', '속초'] },
   { id: 'chungcheong', label: '충청',   children: ['대전', '청주', '천안', '충주'] },
-  { id: 'jeolla',      label: '전라',   children: ['광주', '전주', '여수', '순천', '목포'] },
+  { id: 'jeonbuk',     label: '전북특별자치도', regionFilter: '전북특별자치도', children: ['전주', '군산', '익산', '남원'] },
+  { id: 'jeonnam',     label: '전라남도', children: ['광주', '여수', '순천', '목포'] },
   { id: 'gyeongsang',  label: '경상',   children: ['부산', '대구', '경주', '울산', '포항'] },
   { id: 'jeju',        label: '제주',   children: ['제주시', '서귀포'] },
 ];
 
 const PAGE_INFO = {
   gallery: { title: '지역 갤러리',   subtitle: 'AI 기반으로 숨은 로컬 스팟을 찾아드려요.' },
-  planner: { title: '여행 플래너',   subtitle: '챗봇과 함께 나만의 여행 일정을 만들어보세요.' },
+  planner: { title: '여행 플래너',   subtitle: '챗봇과 함께 나만의 여행 일정을 만들어보세요. 채팅·검색으로 채우고 드래그로 순서·일차를 조정하세요.' },
   mypage:  { title: '마이페이지',    subtitle: '스크랩한 장소와 내 여행 일정을 관리하세요.' },
 };
 
 function normalizeTextKey(v) { return String(v || '').toLowerCase().replace(/\s+/g, '').trim(); }
 function normalizeImageKey(u) { const v = String(u || '').trim().toLowerCase(); return v ? v.replace(/^https?:/, '') : ''; }
-
-function pickFeedItems(items, size = FEED_SIZE) {
-  if (!Array.isArray(items) || !items.length) return [];
-  const shuffled = [...items].sort(() => Math.random() - 0.5);
-  const picked = [], usedImg = new Set(), usedName = new Set();
-  for (const item of shuffled) {
-    const nk = normalizeTextKey(item?.name), ik = normalizeImageKey(item?.imageUrl);
-    if (!nk || usedName.has(nk) || (ik && usedImg.has(ik))) continue;
-    picked.push(item); usedName.add(nk); if (ik) usedImg.add(ik);
-    if (picked.length >= size) return picked;
-  }
-  for (const item of shuffled) { const nk = normalizeTextKey(item?.name); if (!nk || usedName.has(nk)) continue; picked.push(item); usedName.add(nk); if (picked.length >= size) break; }
-  return picked.slice(0, size);
-}
 
 function mapSearchHitToRegion(row, regionMap) {
   const id = Number(row.place_id), base = regionMap.get(id);
@@ -160,6 +187,9 @@ export default function App() {
   const accountAreaRef = useRef(null);
   const galleryVectorSearchActiveRef = useRef(isGalleryVectorFeedLocked());
   const gallerySearchSeqRef = useRef(0);
+  /** 사이드바 지역 필터: 전체 후보 풀 + 라벨 (클릭·새로고침마다 랜덤 9개) */
+  const [sidebarGalleryPool, setSidebarGalleryPool] = useState([]);
+  const [sidebarGalleryLabel, setSidebarGalleryLabel] = useState('');
 
   useEffect(() => { const sync = () => { try { const raw = localStorage.getItem('lv_user'); setCurrentUser(raw ? JSON.parse(raw) : null); } catch { setCurrentUser(null); } }; window.addEventListener('lv-auth-changed', sync); return () => window.removeEventListener('lv-auth-changed', sync); }, []);
 
@@ -314,8 +344,30 @@ export default function App() {
     return { ...r, imageUrl: base.imageUrl || r.imageUrl || '', summary: s, address: r.address || base.address, latitude: r.latitude ?? base.latitude, longitude: r.longitude ?? base.longitude, province: r.province || base.province };
   }), [displayedRegions, regionMap]);
 
+  const clearSidebarGalleryFilter = useCallback(() => {
+    setSidebarGalleryPool([]);
+    setSidebarGalleryLabel('');
+  }, []);
+
+  const applySidebarGalleryFeed = useCallback((list, label) => {
+    const normalized = (Array.isArray(list) ? list : [])
+      .map(r => normalizeRegionMediaFields(r))
+      .filter(Boolean);
+    if (normalized.length === 0) return false;
+    setSidebarGalleryPool(normalized);
+    setSidebarGalleryLabel(String(label || '').trim());
+    setDisplayedRegions(pickFeedItems(normalized, FEED_SIZE));
+    return true;
+  }, []);
+
+  const handleShuffleSidebarGallery = useCallback(() => {
+    if (!sidebarGalleryPool.length) return;
+    setDisplayedRegions(pickFeedItems(sidebarGalleryPool, FEED_SIZE));
+  }, [sidebarGalleryPool]);
+
   const handleGalleryVectorSearch = useCallback(async (q) => {
     const trimmed = String(q || '').trim(); if (!trimmed) return false;
+    clearSidebarGalleryFilter();
     const seq = ++gallerySearchSeqRef.current; setGallerySearchBusy(true);
     try {
       const url = new URL(`${API_BASE_URL}/api/search`); url.searchParams.set('q', trimmed);
@@ -326,26 +378,24 @@ export default function App() {
         normalizeRegionMediaFields(mapSearchHitToRegion(row, regionMap)),
       );
       if (seq !== gallerySearchSeqRef.current) return false;
-      if (mapped.length > 0) { galleryVectorSearchActiveRef.current = true; persistGalleryVectorResults(mapped); setDisplayedRegions(mapped); return true; }
+      if (mapped.length > 0) {
+        const feed = pickOrderedFeedItems(mapped, FEED_SIZE);
+        galleryVectorSearchActiveRef.current = true;
+        persistGalleryVectorResults(feed);
+        setDisplayedRegions(feed);
+        return true;
+      }
       window.alert('검색 결과가 없습니다.'); return false;
     } catch { if (seq === gallerySearchSeqRef.current) window.alert('네트워크 오류입니다.'); return false; }
     finally { if (seq === gallerySearchSeqRef.current) setGallerySearchBusy(false); }
-  }, [regionMap]);
+  }, [regionMap, clearSidebarGalleryFilter]);
 
   const handleSidebarRegionClick = useCallback(async (label) => {
     const key = String(label || '').trim();
     if (!key) return;
     clearGalleryVectorLock(galleryVectorSearchActiveRef);
+    clearSidebarGalleryFilter();
     setActiveTab('gallery');
-
-    const applyLocationResults = (list) => {
-      const normalized = (Array.isArray(list) ? list : [])
-        .map(r => normalizeRegionMediaFields(r))
-        .filter(Boolean);
-      if (normalized.length === 0) return false;
-      setDisplayedRegions(normalized.slice(0, Math.max(FEED_SIZE * 3, 24)));
-      return true;
-    };
 
     try {
       const res = await fetch(
@@ -353,15 +403,15 @@ export default function App() {
       );
       if (res.ok) {
         const data = await res.json();
-        if (applyLocationResults(data?.regions)) return;
+        if (applySidebarGalleryFeed(data?.regions, key)) return;
       }
     } catch { /* API 실패 시 로컬 필터 */ }
 
     const local = filterRegionsBySidebarLocation(regions, key);
-    if (applyLocationResults(local)) return;
+    if (applySidebarGalleryFeed(local, key)) return;
 
     window.alert(`"${key}" 지역(주소 기준)에 맞는 장소를 찾지 못했습니다.`);
-  }, [regions]);
+  }, [regions, applySidebarGalleryFeed, clearSidebarGalleryFilter]);
 
   const handleChatbotSubmit = async (e) => {
     e.preventDefault(); const msg = chatbotInput.trim(); if (!msg || chatbotBusy) return;
@@ -533,10 +583,32 @@ export default function App() {
             <div className="sidebar-section-title" style={{ marginTop: 14 }}>지역</div>
             {REGION_TREE.map(r => (
               <div key={r.id}>
-                <button className="sidebar-link" type="button" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onClick={() => setOpenRegions(prev => ({ ...prev, [r.id]: !prev[r.id] }))}>
-                  <span>📍 {r.label}</span>
-                  <span style={{ fontSize: 9, color: '#bbb', display: 'inline-block', transition: 'transform 150ms', transform: openRegions[r.id] ? 'rotate(180deg)' : 'none' }}>▼</span>
-                </button>
+                {r.regionFilter ? (
+                  <div style={{ display: 'flex', alignItems: 'stretch' }}>
+                    <button
+                      className="sidebar-link"
+                      type="button"
+                      style={{ flex: 1, textAlign: 'left' }}
+                      onClick={() => { void handleSidebarRegionClick(r.regionFilter); }}
+                    >
+                      📍 {r.label}
+                    </button>
+                    <button
+                      type="button"
+                      className="sidebar-link"
+                      style={{ width: 28, padding: '8px 4px', flexShrink: 0 }}
+                      aria-label={`${r.label} 시·군 목록`}
+                      onClick={() => setOpenRegions(prev => ({ ...prev, [r.id]: !prev[r.id] }))}
+                    >
+                      <span style={{ fontSize: 9, color: '#bbb', display: 'inline-block', transition: 'transform 150ms', transform: openRegions[r.id] ? 'rotate(180deg)' : 'none' }}>▼</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button className="sidebar-link" type="button" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onClick={() => setOpenRegions(prev => ({ ...prev, [r.id]: !prev[r.id] }))}>
+                    <span>📍 {r.label}</span>
+                    <span style={{ fontSize: 9, color: '#bbb', display: 'inline-block', transition: 'transform 150ms', transform: openRegions[r.id] ? 'rotate(180deg)' : 'none' }}>▼</span>
+                  </button>
+                )}
                 {openRegions[r.id] && (
                   <div style={{ paddingLeft: 8 }}>
                     {r.children.map(city => (
@@ -607,8 +679,27 @@ export default function App() {
               <div className="gallery-search-center">
                 <GallerySearchBox onSearch={handleGalleryVectorSearch} busy={gallerySearchBusy} placeholder="예: 여수 야경 맛집, 조용한 감성 카페, 부산 당일치기" />
               </div>
+              {sidebarGalleryLabel ? (
+                <div className="gallery-region-feed-bar">
+                  <span className="gallery-region-feed-label">
+                    📍 {sidebarGalleryLabel}
+                    {sidebarGalleryPool.length > FEED_SIZE
+                      ? ` · ${sidebarGalleryPool.length}곳 중 랜덤 ${FEED_SIZE}개`
+                      : ` · ${sidebarGalleryPool.length}곳`}
+                  </span>
+                  {sidebarGalleryPool.length > FEED_SIZE ? (
+                    <button
+                      type="button"
+                      className="gallery-region-feed-shuffle"
+                      onClick={handleShuffleSidebarGallery}
+                    >
+                      다른 장소 보기 ↻
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
               <RegionGallery
-                regions={galleryDisplayRegions.slice(0, FEED_SIZE)}
+                regions={galleryDisplayRegions}
                 scrappedIds={scrappedIds}
                 onToggleScrap={handleToggleScrap}
                 onAddToTrip={handleRequestAddToTrip}

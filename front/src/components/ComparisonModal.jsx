@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
+import ComparisonAttributeMatrix from './ui/ComparisonTable';
 import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
 import { CARD_PLACEHOLDER_SVG } from '../utils/placeholderImage';
 
@@ -70,6 +71,8 @@ function ComparisonPlaceCard({ item, index, onSelect }) {
 
 export default function ComparisonModal({
   items = [],
+  comparisonSummary = '',
+  matrixRows = [],
   onClose,
   onSelectPlace,
 }) {
@@ -137,6 +140,14 @@ export default function ComparisonModal({
               비교할 장소 정보를 찾을 수 없어요.
             </p>
           ) : (
+            <>
+              {comparisonSummary ? (
+                <div className="comparison-modal-summary" role="note">
+                  <span className="comparison-modal-summary-label">AI 한눈에</span>
+                  <p>{comparisonSummary}</p>
+                </div>
+              ) : null}
+              <ComparisonAttributeMatrix items={items} matrixRows={matrixRows} />
             <div
               className={`comparison-modal-grid comparison-modal-grid--${Math.min(items.length, 3)}`}
             >
@@ -154,6 +165,7 @@ export default function ComparisonModal({
                 </span>
               ) : null}
             </div>
+            </>
           )}
         </div>
 

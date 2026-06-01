@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from datetime import datetime
 from typing import Any, Optional
 
@@ -12,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.repositories.db import Base
 from app.services.media_utils import sanitize_display_image_url
+from app.utils.province_names import canonical_province, province_tokens_for_filter, special_province_canon_for_locality
 from app.utils.sidebar_location import address_tokens_for_locality, place_row_matches_sidebar_locality
 
 logger = logging.getLogger(__name__)
@@ -146,7 +148,7 @@ def place_to_region_dict(
         "sourceId": place.content_id or "",
         "name": place.name or "",
         "region": place.region or "",
-        "province": place.province or "",
+        "province": canonical_province(place.province) or (place.province or ""),
         "address": place.address or "",
         "latitude": place.latitude,
         "longitude": place.longitude,
@@ -191,21 +193,23 @@ def find_place_ids_by_location_locality(session, locality: str, *, limit: int = 
         like = f"%{tok}%"
         conds.append(Place.address.like(like))
         conds.append(Place.province.like(like))
+    special_canon = special_province_canon_for_locality(label)
+    if special_canon:
+        for tok in province_tokens_for_filter(special_canon):
+            like = f"%{tok}%"
+            conds.append(Place.province.like(like))
+            conds.append(Place.address.like(like))
     base = label.replace("시", "").replace("군", "").strip()
     for reg_val in {label, base, f"{base}시", f"{base}군"}:
         if reg_val:
             conds.append(Place.region == reg_val)
 
-    stmt = select(Place).where(or_(*conds)).order_by(Place.place_id.desc()).limit(max(limit * 3, 48))
+    fetch_cap = max(limit * 4, 160)
+    stmt = select(Place).where(or_(*conds)).limit(fetch_cap)
     places = session.execute(stmt).scalars().all()
-    out: list[int] = []
-    for p in places:
-        if not place_row_matches_sidebar_locality(p, label):
-            continue
-        out.append(int(p.place_id))
-        if len(out) >= limit:
-            break
-    return out
+    matched = [p for p in places if place_row_matches_sidebar_locality(p, label)]
+    random.shuffle(matched)
+    return [int(p.place_id) for p in matched[:limit]]
 
 
 def find_place_ids_for_locality_hints(session, keywords: list[str], *, limit: int = 120) -> list[int]:
