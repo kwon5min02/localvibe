@@ -11,8 +11,24 @@ const SECTION_RULES = [
   { header: '방문 팁', test: s => /추천|예약|대기|방문|팁|알아두|주말|평일/.test(s) },
 ];
 
+function unwrapArticleRaw(raw) {
+  let t = String(raw || '').trim();
+  if (t.startsWith('```')) {
+    t = t.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  }
+  return t;
+}
+
+function looksLikeStructuredJson(raw) {
+  const t = unwrapArticleRaw(raw);
+  return (
+    (t.startsWith('{') || t.startsWith('[')) &&
+    (t.includes('"sections"') || t.includes('"lead"') || t.includes('"version"'))
+  );
+}
+
 function tryParseJsonBlocks(raw) {
-  const t = String(raw || '').trim();
+  const t = unwrapArticleRaw(raw);
   if (!t.startsWith('{') && !t.startsWith('[')) {
     return null;
   }
@@ -24,7 +40,7 @@ function tryParseJsonBlocks(raw) {
     if (Array.isArray(data?.blocks)) {
       return normalizeBlocks(data.blocks);
     }
-    if (data?.lead || data?.sections) {
+    if (data?.lead || data?.sections || (data?.version && data?.sections)) {
       return structuredPayloadToBlocks(data);
     }
   } catch {
@@ -53,7 +69,16 @@ function structuredPayloadToBlocks(data) {
     if (heading) {
       out.push({ type: 'subheader', text: heading });
     }
-    const paras = sec.paragraphs || (sec.text ? [sec.text] : []);
+    let paras = sec.paragraphs;
+    if (paras == null && sec.body != null) {
+      paras = typeof sec.body === 'string' ? [sec.body] : sec.body;
+    }
+    if (paras == null && sec.text != null) {
+      paras = typeof sec.text === 'string' ? [sec.text] : sec.text;
+    }
+    if (!Array.isArray(paras)) {
+      paras = [];
+    }
     for (const p of paras) {
       const text = String(p || '').trim();
       if (text) {
@@ -168,6 +193,33 @@ function splitParagraphChunks(sentences, maxChars = 320) {
     chunks.push(buf);
   }
   return chunks;
+}
+
+/** API content / blocks → ArticleBody blocks (JSON v2 우선) */
+export function resolveArticleBlocks(article, region = {}) {
+  const content = article?.content;
+  if (looksLikeStructuredJson(content)) {
+    const fromContent = tryParseJsonBlocks(content);
+    if (fromContent?.length) {
+      return fromContent;
+    }
+  }
+  if (Array.isArray(article?.blocks) && article.blocks.length > 0) {
+    const normalized = normalizeBlocks(article.blocks);
+    if (normalized.length === 1 && looksLikeStructuredJson(normalized[0]?.text)) {
+      const fromBlob = tryParseJsonBlocks(normalized[0].text);
+      if (fromBlob?.length) {
+        return fromBlob;
+      }
+    }
+    if (normalized.length > 0) {
+      return normalized;
+    }
+  }
+  if (content) {
+    return parseArticleContentToBlocks(content, region);
+  }
+  return [];
 }
 
 /** plain text / JSON → ArticleBody blocks */
@@ -312,11 +364,7 @@ export function buildArticleDisplayData(article, region) {
     return fallback;
   }
 
-  const blocksFromApi =
-    Array.isArray(article.blocks) && article.blocks.length > 0
-      ? normalizeBlocks(article.blocks)
-      : parseArticleContentToBlocks(article.content, region);
-
+  const blocksFromApi = resolveArticleBlocks(article, region);
   const body =
     blocksFromApi.length > 0 ? blocksFromApi : fallback.body;
 

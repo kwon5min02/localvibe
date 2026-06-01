@@ -28,7 +28,7 @@ import {
   syncMyTrips,
 } from './utils/tripsApi';
 import { filterRegionsBySidebarLocation } from './utils/sidebarLocationFilter';
-import ContactModal from './components/ContactModal';
+import ContactPage from './pages/ContactPage';
 
 const DEFAULT_REGIONS_NORMALIZED = defaultRegions.map(r =>
   normalizeRegionMediaFields({ ...r }),
@@ -191,6 +191,10 @@ const PAGE_INFO = {
   mypage: {
     title: '마이페이지',
     subtitle: '스크랩한 장소와 내 여행 일정을 관리하세요.',
+  },
+  contact: {
+    title: '문의하기',
+    subtitle: '궁금한 점이나 불편한 점을 알려주세요.',
   },
 };
 
@@ -372,7 +376,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('gallery');
   const [scrappedIds, setScrappedIds] = useState([]);
   const [myTrips, setMyTrips] = useState([]);
-  const [contactOpen, setContactOpen] = useState(false);
   const [modalCrawlImages, setModalCrawlImages] = useState([]);
   const [modalArticle, setModalArticle] = useState(null);
   const [modalArticleLoading, setModalArticleLoading] = useState(false);
@@ -708,14 +711,19 @@ export default function App() {
 
   useEffect(() => {
     const tab = location.state?.tab;
-    if (tab === 'planner' || tab === 'gallery' || tab === 'mypage') {
+    if (
+      tab === 'planner' ||
+      tab === 'gallery' ||
+      tab === 'mypage' ||
+      tab === 'contact'
+    ) {
       setActiveTab(tab);
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state, location.pathname, navigate]);
 
   useEffect(() => {
-    if (activeTab === 'planner') {
+    if (activeTab === 'planner' || activeTab === 'contact') {
       setSelectedRegion(null);
       setInsightRegion(null);
       setModalCrawlImages([]);
@@ -1071,7 +1079,8 @@ export default function App() {
     [regions, scrappedIds],
   );
   const currentPage = PAGE_INFO[activeTab] || PAGE_INFO.gallery;
-  const showSidebar = activeTab === 'gallery' && sidebarOpen;
+  const showSidebar =
+    (activeTab === 'gallery' || activeTab === 'contact') && sidebarOpen;
   const effectiveSidebarWidth = showSidebar ? sidebarWidth : 0;
 
   return (
@@ -1191,8 +1200,8 @@ export default function App() {
             </button>
             <button
               type="button"
-              className="sidebar-link"
-              onClick={() => setContactOpen(true)}
+              className={`sidebar-link${activeTab === 'contact' ? ' active' : ''}`}
+              onClick={() => setActiveTab('contact')}
             >
               📬 문의하기
             </button>
@@ -1206,7 +1215,9 @@ export default function App() {
         {/* ── 메인 ── */}
         <main className="app-shell">
           {/* 통일된 페이지 헤더 */}
-          <div className="page-header">
+          <div
+            className={`page-header${activeTab === 'contact' ? ' page-header--contact' : ''}`}
+          >
             <h1 className="page-title">{currentPage.title}</h1>
             <p className="page-subtitle">{currentPage.subtitle}</p>
           </div>
@@ -1275,6 +1286,8 @@ export default function App() {
               onRequireLogin={requireLoginForTrips}
             />
           )}
+          {activeTab === 'contact' && <ContactPage />}
+
           {activeTab === 'mypage' && (
             <MyPage
               scrappedRegions={scrappedRegions}
@@ -1306,7 +1319,19 @@ export default function App() {
               <div className="main-footer-links">
                 <span>Core Features</span>
                 <span>Pro Experience</span>
-                <span>Contact</span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setActiveTab('contact')}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setActiveTab('contact');
+                    }
+                  }}
+                >
+                  Contact
+                </span>
                 <span>Join</span>
               </div>
             </div>
@@ -1426,7 +1451,6 @@ export default function App() {
         }}
       />
 
-      <ContactModal isOpen={contactOpen} onClose={() => setContactOpen(false)} />
     </div>
   );
 }
