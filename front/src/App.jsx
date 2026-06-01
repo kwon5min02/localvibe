@@ -385,16 +385,6 @@ export default function App() {
   const [openRegions, setOpenRegions] = useState({});
   const [accountPopupOpen, setAccountPopupOpen] = useState(false);
   const [tripSelectRegion, setTripSelectRegion] = useState(null);
-  const [chatbotOpen, setChatbotOpen] = useState(false);
-  const [chatbotMessages, setChatbotMessages] = useState([
-    {
-      role: 'assistant',
-      text: '안녕하세요! 어떤 장소를 찾고 계신가요?\n예: 여자친구랑 감성 카페, 가족 당일치기',
-    },
-  ]);
-  const [chatbotInput, setChatbotInput] = useState('');
-  const [chatbotBusy, setChatbotBusy] = useState(false);
-  const chatMessagesRef = useRef(null);
   const accountAreaRef = useRef(null);
   const galleryVectorSearchActiveRef = useRef(isGalleryVectorFeedLocked());
   const gallerySearchSeqRef = useRef(0);
@@ -634,11 +624,6 @@ export default function App() {
   }, [selectedRegion?.id]);
 
   useEffect(() => {
-    if (chatMessagesRef.current)
-      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
-  }, [chatbotMessages, chatbotBusy]);
-
-  useEffect(() => {
     if (!accountPopupOpen) return;
     const handler = e => {
       if (accountAreaRef.current && !accountAreaRef.current.contains(e.target))
@@ -729,7 +714,6 @@ export default function App() {
       setModalCrawlImages([]);
       setModalArticle(null);
       setModalArticleLoading(false);
-      setChatbotOpen(false);
     }
   }, [activeTab]);
 
@@ -849,44 +833,6 @@ export default function App() {
     },
     [regions, applySidebarGalleryFeed, clearSidebarGalleryFilter],
   );
-
-  const handleChatbotSubmit = async e => {
-    e.preventDefault();
-    const msg = chatbotInput.trim();
-    if (!msg || chatbotBusy) return;
-    setChatbotMessages(prev => [...prev, { role: 'user', text: msg }]);
-    setChatbotInput('');
-    setChatbotBusy(true);
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg }),
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setChatbotMessages(prev => [
-        ...prev,
-        { role: 'assistant', text: data.answer || '추천이 완료됐어요!' },
-      ]);
-      if (
-        Array.isArray(data.recommendedRegionIds) &&
-        data.recommendedRegionIds.length > 0
-      ) {
-        const newRegions = data.recommendedRegionIds
-          .map(id => regionMap.get(Number(id)))
-          .filter(Boolean);
-        if (newRegions.length > 0) setDisplayedRegions(newRegions);
-      }
-    } catch {
-      setChatbotMessages(prev => [
-        ...prev,
-        { role: 'assistant', text: '오류가 발생했어요.' },
-      ]);
-    } finally {
-      setChatbotBusy(false);
-    }
-  };
 
   const handleToggleScrap = useCallback(
     async regionId => {
@@ -1098,90 +1044,38 @@ export default function App() {
             flexDirection: 'column',
           }}
         >
-          {/* 메뉴 */}
-          <div className="sidebar-spacer" />
           <div className="sidebar-scroll-area">
-            <div className="sidebar-section-title">지역</div>
+            <div className="sidebar-section-title" style={{ marginTop: 14 }}>
+              지역
+            </div>
             {REGION_TREE.map(r => (
               <div key={r.id}>
-                {r.regionFilter ? (
-                  <div style={{ display: 'flex', alignItems: 'stretch' }}>
-                    <button
-                      className="sidebar-link"
-                      type="button"
-                      style={{ flex: 1, textAlign: 'left' }}
-                      onClick={() => {
-                        void handleSidebarRegionClick(r.regionFilter);
-                      }}
-                    >
-                      {r.label}
-                    </button>
-                    <button
-                      type="button"
-                      className="sidebar-link"
-                      style={{ width: 28, padding: '8px 4px', flexShrink: 0 }}
-                      aria-label={`${r.label} 시·군 목록`}
-                      onClick={() =>
-                        setOpenRegions(prev => ({
-                          ...prev,
-                          [r.id]: !prev[r.id],
-                        }))
-                      }
-                    >
-                      <span
-                        style={{
-                          fontSize: 9,
-                          color: '#bbb',
-                          display: 'inline-block',
-                          transition: 'transform 150ms',
-                          transform: openRegions[r.id]
-                            ? 'rotate(180deg)'
-                            : 'none',
-                        }}
-                      >
-                        ▼
-                      </span>
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    className="sidebar-link"
-                    type="button"
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                    onClick={() =>
-                      setOpenRegions(prev => ({ ...prev, [r.id]: !prev[r.id] }))
-                    }
+                <button
+                  className="sidebar-link sidebar-link--region"
+                  type="button"
+                  aria-expanded={Boolean(openRegions[r.id])}
+                  onClick={() =>
+                    setOpenRegions(prev => ({ ...prev, [r.id]: !prev[r.id] }))
+                  }
+                >
+                  <span className="sidebar-link-label">{r.label}</span>
+                  <span
+                    className={`sidebar-link-chevron${openRegions[r.id] ? ' is-open' : ''}`}
+                    aria-hidden
                   >
-                    <span>{r.label}</span>
-                    <span
-                      style={{
-                        fontSize: 9,
-                        color: '#bbb',
-                        display: 'inline-block',
-                        transition: 'transform 150ms',
-                        transform: openRegions[r.id]
-                          ? 'rotate(180deg)'
-                          : 'none',
-                      }}
-                    >
-                      ▼
-                    </span>
-                  </button>
-                )}
+                    ▼
+                  </span>
+                </button>
                 {openRegions[r.id] && (
-                  <div style={{ paddingLeft: 8 }}>
+                  <div className="sidebar-children">
                     {r.children.map(city => (
                       <button
                         key={city}
-                        className="sidebar-link"
+                        className="sidebar-link sidebar-link--child"
                         type="button"
-                        style={{ fontSize: 12, color: '#777', paddingLeft: 18 }}
                         onClick={() => {
-                          void handleSidebarRegionClick(city);
+                          void handleGalleryVectorSearch(city);
+                          setActiveTab('gallery');
                         }}
                       >
                         {city}
@@ -1195,15 +1089,19 @@ export default function App() {
             <div className="sidebar-section-title" style={{ marginTop: 14 }}>
               정보
             </div>
-            <button type="button" className="sidebar-link" onClick={() => navigate('/')}>
-              💡 서비스 소개
+            <button
+              type="button"
+              className="sidebar-link"
+              onClick={() => navigate('/')}
+            >
+              서비스 소개
             </button>
             <button
               type="button"
               className={`sidebar-link${activeTab === 'contact' ? ' active' : ''}`}
               onClick={() => setActiveTab('contact')}
             >
-              📬 문의하기
+              문의하기
             </button>
           </div>
         </aside>
@@ -1275,7 +1173,7 @@ export default function App() {
               )}
             </>
           )}
-          {activeTab === 'planner' && (
+          <div hidden={activeTab !== 'planner'} aria-hidden={activeTab !== 'planner'}>
             <MemoTripPlannerPage
               regionMap={regionMap}
               scrappedIds={scrappedIds}
@@ -1285,7 +1183,7 @@ export default function App() {
               onMyTripsChange={setMyTrips}
               onRequireLogin={requireLoginForTrips}
             />
-          )}
+          </div>
           {activeTab === 'contact' && <ContactPage />}
 
           {activeTab === 'mypage' && (
@@ -1341,78 +1239,6 @@ export default function App() {
           </footer>
         </main>
       </div>
-
-      {/* 플로팅 챗봇 */}
-      {activeTab === 'gallery' && (
-        <>
-          {chatbotOpen && (
-            <div className="chatbot-float-panel">
-              <div className="chatbot-float-header">
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#111' }}>
-                  🤖 AI 장소 추천
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setChatbotOpen(false)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: '#999',
-                    fontSize: 15,
-                    lineHeight: 1,
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="chatbot-float-messages" ref={chatMessagesRef}>
-                {chatbotMessages.map((m, i) => (
-                  <div key={i} className={`chatbot-float-msg ${m.role}`}>
-                    {m.text}
-                  </div>
-                ))}
-                {chatbotBusy && (
-                  <div className="chatbot-float-msg assistant">
-                    <span className="chatbot-skeleton-dot" />
-                    <span className="chatbot-skeleton-dot" />
-                    <span className="chatbot-skeleton-dot" />
-                  </div>
-                )}
-              </div>
-              <form
-                className="chatbot-float-form"
-                onSubmit={handleChatbotSubmit}
-              >
-                <input
-                  className="chatbot-float-input"
-                  type="text"
-                  value={chatbotInput}
-                  onChange={e => setChatbotInput(e.target.value)}
-                  placeholder="분위기 좋은 카페..."
-                  disabled={chatbotBusy}
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  className="chatbot-float-send"
-                  disabled={chatbotBusy || !chatbotInput.trim()}
-                >
-                  →
-                </button>
-              </form>
-            </div>
-          )}
-          <button
-            type="button"
-            className="chatbot-fab"
-            onClick={() => setChatbotOpen(o => !o)}
-            aria-label="AI 추천"
-          >
-            {chatbotOpen ? '✕' : '🤖'}
-          </button>
-        </>
-      )}
 
       {/* 여행 선택 모달 */}
       {tripSelectRegion && (

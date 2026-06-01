@@ -11,6 +11,15 @@ import {
   recomputeScheduleForOrderedLocations,
   TRIP_ITEMS_PER_DAY_DEFAULT,
 } from '../utils/tripSchedule';
+import {
+  clearTripPlannerDraft,
+  hydratePlannerPlaces,
+  readTripPlannerDraft,
+  restorePlannerMessages,
+  saveTripPlannerDraft,
+  serializePlannerMessages,
+  serializePlannerPlaces,
+} from '../utils/tripPlannerPersist';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
@@ -28,10 +37,84 @@ function TripPlannerPage({
 }) {
   const map = regionMap instanceof Map ? regionMap : EMPTY_REGION_MAP;
   const lookupRegion = id => map.get(Number(id));
+  const plannerDraftRef = useRef(readTripPlannerDraft());
+  const persistReadyRef = useRef(false);
+  const persistTimerRef = useRef(null);
+  const messagesForPersistRef = useRef(null);
+  const roadmapLocationsRef = useRef([]);
+  const tripDurationRef = useRef(null);
+  const [initialChatMessages] = useState(() =>
+    restorePlannerMessages(plannerDraftRef.current?.messages),
+  );
   const [roadmapLocations, setRoadmapLocations] = useState([]);
   const [tripDuration, setTripDuration] = useState(null);
   const chatResetRef = useRef(null);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
+
+  const schedulePersist = useCallback(() => {
+    if (!persistReadyRef.current) {
+      return;
+    }
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+    }
+    persistTimerRef.current = setTimeout(() => {
+      saveTripPlannerDraft({
+        placeEntries: serializePlannerPlaces(roadmapLocationsRef.current),
+        tripDuration: tripDurationRef.current,
+        messages: serializePlannerMessages(messagesForPersistRef.current),
+      });
+    }, 300);
+  }, []);
+
+  const handleMessagesChange = useCallback(
+    messages => {
+      messagesForPersistRef.current = messages;
+      schedulePersist();
+    },
+    [schedulePersist],
+  );
+
+  useEffect(() => {
+    roadmapLocationsRef.current = roadmapLocations;
+    schedulePersist();
+  }, [roadmapLocations, schedulePersist]);
+
+  useEffect(() => {
+    tripDurationRef.current = tripDuration;
+    schedulePersist();
+  }, [tripDuration, schedulePersist]);
+
+  useEffect(() => {
+    if (persistReadyRef.current) {
+      return;
+    }
+    const draft = plannerDraftRef.current;
+    if (!draft) {
+      persistReadyRef.current = true;
+      return;
+    }
+    if (map.size === 0) {
+      return;
+    }
+    const hydrated = hydratePlannerPlaces(draft.placeEntries, map);
+    if (hydrated.length > 0) {
+      setRoadmapLocations(hydrated);
+    }
+    if (draft.tripDuration) {
+      setTripDuration(draft.tripDuration);
+    }
+    persistReadyRef.current = true;
+  }, [map]);
+
+  useEffect(
+    () => () => {
+      if (persistTimerRef.current) {
+        clearTimeout(persistTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [insightLocation, setInsightLocation] = useState(null);
@@ -285,6 +368,7 @@ function TripPlannerPage({
     setTripDuration(null);
     setSelectedLocation(null);
     setInsightLocation(null);
+    clearTripPlannerDraft();
     chatResetRef.current?.();
   };
 
@@ -481,6 +565,8 @@ function TripPlannerPage({
             tripDuration={tripDuration}
             onTripMetaChange={handleTripMetaChange}
             onResetRef={chatResetRef}
+            initialMessages={initialChatMessages}
+            onMessagesChange={handleMessagesChange}
           />
         </div>
       </div>

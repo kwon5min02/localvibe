@@ -196,8 +196,15 @@ function TripChatPanelInner({
   tripDuration: tripDurationProp = null,
   onTripMetaChange,
   onResetRef,
+  initialMessages = null,
+  onMessagesChange,
 }) {
-  const [messages, setMessages] = useState([INITIAL_MESSAGE]);
+  const [messages, setMessages] = useState(() => {
+    if (Array.isArray(initialMessages) && initialMessages.length > 0) {
+      return initialMessages;
+    }
+    return [INITIAL_MESSAGE];
+  });
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [loadingPhaseIndex, setLoadingPhaseIndex] = useState(0);
@@ -212,14 +219,20 @@ function TripChatPanelInner({
   useEffect(() => {
     if (onResetRef) {
       onResetRef.current = () => {
-        setMessages([INITIAL_MESSAGE]);
+        const fresh = [INITIAL_MESSAGE];
+        setMessages(fresh);
         setTripDuration(null);
         setLastAction(null);
         setVisualPopup(null);
         onTripMetaChange?.({ duration: null, lastAction: null });
+        onMessagesChange?.(fresh);
       };
     }
-  }, [onResetRef, onTripMetaChange]);
+  }, [onResetRef, onTripMetaChange, onMessagesChange]);
+
+  useEffect(() => {
+    onMessagesChange?.(messages);
+  }, [messages, onMessagesChange]);
 
   useEffect(() => {
     setTripDuration(tripDurationProp);
