@@ -20,6 +20,7 @@ import {
   syncMyTrips,
 } from './utils/tripsApi';
 import { filterRegionsBySidebarLocation } from './utils/sidebarLocationFilter';
+import ContactModal from './components/ContactModal';
 
 const DEFAULT_REGIONS_NORMALIZED = defaultRegions.map((r) =>
   normalizeRegionMediaFields({ ...r }),
@@ -186,6 +187,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('gallery');
   const [scrappedIds, setScrappedIds] = useState([]);
   const [myTrips, setMyTrips] = useState([]);
+  const [contactOpen, setContactOpen] = useState(false);
   const [modalCrawlImages, setModalCrawlImages] = useState([]);
   const [modalArticle, setModalArticle] = useState(null);
   const [modalArticleLoading, setModalArticleLoading] = useState(false);
@@ -684,7 +686,13 @@ export default function App() {
 
             <div className="sidebar-section-title" style={{ marginTop: 14 }}>정보</div>
             <div className="sidebar-static-link">💡 서비스 소개</div>
-            <div className="sidebar-static-link">📬 문의하기</div>
+            <button
+              type="button"
+              className="sidebar-link"
+              onClick={() => setContactOpen(true)}
+            >
+              📬 문의하기
+            </button>
           </div>
 
           {/* ── 하단 계정 영역 ── */}
@@ -857,6 +865,8 @@ export default function App() {
         onAddToTrip={handleRequestAddToTrip}
         onClose={() => { setSelectedRegion(null); setInsightRegion(null); setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(false); }}
       />
+
+      <ContactModal isOpen={contactOpen} onClose={() => setContactOpen(false)} />
     </div>
   );
 }
