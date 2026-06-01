@@ -73,9 +73,9 @@ export default function CommonHeader({ onTabChange }) {
 
         {/* 중앙 네비 */}
         <nav className="common-header-nav">
-          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('gallery') : navigate('/main')}>갤러리</span>
-          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('planner') : navigate('/main')}>플래너</span>
-          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('mypage') : navigate('/main')}>마이페이지</span>
+          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('gallery') : navigate('/main', { state: { tab: 'gallery' } })}>갤러리</span>
+          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('planner') : navigate('/main', { state: { tab: 'planner' } })}>플래너</span>
+          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('mypage') : navigate('/main', { state: { tab: 'mypage' } })}>마이페이지</span>
         </nav>
 
         {/* 구분선 */}

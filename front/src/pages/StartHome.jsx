@@ -62,8 +62,9 @@ export default function StartHome() {
   const navigate = useNavigate();
   const { displayed, done, lineIndex } = useTypingSequence(TYPING_LINES);
   const heroRef = useFadeIn();
-  const vibeRef = useFadeIn();
+  const vibeRef = useFadeIn({ repeat: true });
   const techRef = useFadeIn({ repeat: true });
+  const flowRef = useFadeIn({ repeat: true });
   const feedRef = useFadeIn();
   const ctaRef = useFadeIn();
 
@@ -99,6 +100,7 @@ export default function StartHome() {
       <CommonHeader />
 
       {/* 히어로 */}
+      <div style={{ minHeight: 'calc(100vh - 72px)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
       <div ref={heroRef} style={s.hero} className="sh-fade">
         <div style={s.heroText}>
           <p style={s.heroEyebrow}>AI 기반 로컬 여행 추천</p>
@@ -127,6 +129,7 @@ export default function StartHome() {
           />
         </div>
       </div>
+      </div>
 
       {/* 바이브 태그 */}
       <div ref={vibeRef} style={s.section} className="sh-fade">
@@ -150,13 +153,43 @@ export default function StartHome() {
         ))}
       </div>
 
+      {/* 사용 흐름 */}
+      <div ref={flowRef} style={s.section} className="sh-fade">
+        <>
+          <p style={s.sectionEyebrow}>HOW TO USE</p>
+          <h2 style={s.sectionTitle}>세 단계면 충분해요</h2>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0, marginTop: 40, position: 'relative' }}>
+            {[
+              { step: '01', title: '검색', desc: '가고 싶은 분위기나 지역을 자유롭게 입력하세요.\n"여수 감성 카페", "혼자 조용한 술집" 처럼요.' },
+              { step: '02', title: '추천', desc: 'AI가 데이터 기반으로 숨은 로컬 스팟을 찾아드려요. 관광지 말고, 진짜 그 동네 장소로.' },
+              { step: '03', title: '플래너에 담기', desc: '마음에 드는 장소를 여행 플래너에 담고 나만의 일정을 완성하세요.' },
+            ].map((item, i, arr) => (
+              <div key={item.step} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative' }}>
+                {/* 연결선 */}
+                {i < arr.length - 1 && (
+                  <div style={{ position: 'absolute', top: 24, left: '50%', width: '100%', height: 1, background: 'linear-gradient(to right, #ddd, #ddd)', zIndex: 0 }} />
+                )}
+                {/* 스텝 번호 원 */}
+                <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#111', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, zIndex: 1, flexShrink: 0 }}>
+                  {item.step}
+                </div>
+                <div style={{ marginTop: 20, textAlign: 'center', padding: '0 20px' }}>
+                  <h3 style={{ margin: '0 0 10px', fontSize: 17, fontWeight: 700, color: '#111', letterSpacing: '-0.3px' }}>{item.title}</h3>
+                  <p style={{ margin: 0, fontSize: 14, color: '#777', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{item.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      </div>
+
       {/* 기술 카드 */}
       <div
         ref={techRef}
-        style={{ ...s.section, background: '#f8f8f8', padding: '80px 0' }}
+        style={s.section}
         className="sh-fade"
       >
-        <div style={s.sectionInner}>
+        <>
           <p style={s.sectionEyebrow}>HOW IT WORKS</p>
           <h2 style={s.sectionTitle}>데이터가 만드는 로컬 경험</h2>
           <div style={s.techGrid}>
@@ -184,7 +217,7 @@ export default function StartHome() {
               </div>
             ))}
           </div>
-        </div>
+        </>
       </div>
 
       {/* CTA 배너 */}
@@ -246,6 +279,12 @@ export default function StartHome() {
 const s = {
   page: { minHeight: '100vh', background: '#ffffff', paddingTop: '72px', marginBottom: '80px' },
   hero: {
+    maxWidth: 1300,
+    width: '90%',
+    margin: '0 auto',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     maxWidth: 1300,
     width: '90%',
     margin: '0 auto',

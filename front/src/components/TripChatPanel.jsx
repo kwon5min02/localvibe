@@ -354,7 +354,13 @@ function TripChatPanelInner({
 
   return (
     <section className="trip-chat-panel">
-      <h2 className="trip-chat-title">로드맵 편집 챗봇</h2>
+      <div className="trip-chat-title-wrap">
+        <h2 className="trip-chat-title">로드맵 편집 챗봇</h2>
+        <div className="trip-chat-help-btn">
+          ?
+          <div className="trip-chat-help-tooltip">{HELP_TEXT}</div>
+        </div>
+      </div>
 
       {/* Current locations info */}
       {currentLocations.length > 0 && (

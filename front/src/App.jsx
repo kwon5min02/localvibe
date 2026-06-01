@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { googleLogout } from '@react-oauth/google';
 import CommonHeader from './components/CommonHeader';
 import GallerySearchBox from './components/GallerySearchBox';
@@ -340,6 +340,7 @@ function SidebarAccount({ currentUser, onAccountClick, onLoginClick }) {
 
 export default function App() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const raw = localStorage.getItem('lv_user');
@@ -355,7 +356,7 @@ export default function App() {
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [insightRegion, setInsightRegion] = useState(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState('gallery');
+  const [activeTab, setActiveTab] = useState(() => location.state?.tab || 'gallery');
   const [scrappedIds, setScrappedIds] = useState(() => {
     try {
       const p = JSON.parse(localStorage.getItem('lv_scraps') || '[]');
