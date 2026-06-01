@@ -88,3 +88,35 @@ def build_access_token(*, google_sub: str, email: str, name: str, picture: str) 
         "exp": expires_at,
     }
     return jwt.encode(payload, secret, algorithm=algorithm)
+
+
+def decode_access_token(token: str) -> GoogleUserClaims:
+    """Bearer JWT 검증."""
+    secret = os.getenv("JWT_SECRET", "").strip()
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="JWT_SECRET 환경변수가 설정되지 않았습니다.",
+        )
+    algorithm = os.getenv("JWT_ALGORITHM", "HS256").strip() or "HS256"
+    try:
+        payload = jwt.decode(token, secret, algorithms=[algorithm])
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="유효하지 않거나 만료된 토큰입니다.",
+        ) from exc
+
+    google_sub = str(payload.get("sub") or "").strip()
+    email = str(payload.get("email") or "").strip()
+    if not google_sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="토큰에 사용자 정보가 없습니다.",
+        )
+    return GoogleUserClaims(
+        google_sub=google_sub,
+        email=email,
+        name=str(payload.get("name") or ""),
+        picture=str(payload.get("picture") or ""),
+    )

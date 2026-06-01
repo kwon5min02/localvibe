@@ -69,6 +69,11 @@ def _row_to_card(row: dict, attributes: list[dict] | None = None) -> dict:
 
 
 async def compare_places(place_a: str, place_b: str) -> dict:
+    from app.services.comparison_utils import (
+        build_attribute_matrix,
+        generate_comparison_summary,
+    )
+
     rows = load_regions()
     if not rows:
         return {"items": [], "message": "아직 불러온 장소 데이터가 없어요. DB·동기화를 확인해 주세요."}
@@ -81,7 +86,11 @@ async def compare_places(place_a: str, place_b: str) -> dict:
         items.append(_row_to_card(row_b))
     if not items:
         return {"items": [], "message": "해당 장소를 찾을 수 없어요."}
-    return {"items": items}
+    return {
+        "items": items,
+        "comparisonSummary": generate_comparison_summary(items),
+        "matrixRows": build_attribute_matrix(items),
+    }
 
 
 async def show_image_gallery(theme: str, count: int = 9) -> dict:

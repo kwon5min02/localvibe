@@ -1,5 +1,11 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Optional
+
+
+class ArticleBlock(BaseModel):
+    type: str = "paragraph"
+    text: str
+    attribution: Optional[str] = None
 
 
 class PlaceArticleResponse(BaseModel):
@@ -7,6 +13,7 @@ class PlaceArticleResponse(BaseModel):
     doc_id: int
     title: str
     content: str
+    blocks: list[ArticleBlock] = Field(default_factory=list)
     pinecone_id: Optional[str] = None
     cached: bool = False
 

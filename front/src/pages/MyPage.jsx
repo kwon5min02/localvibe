@@ -1,48 +1,105 @@
-import { useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 
-const CARD_IMAGE_FALLBACK = "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=900&q=80";
+import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
+import { CARD_PLACEHOLDER_SVG, displayImageSrc } from '../utils/placeholderImage';
+import {
+  inferRegionHintsFromTripName,
+  searchPlacesForTrip,
+} from '../utils/tripPlaceSearch';
 
-export default function MyPage({ scrappedRegions = [], myTrips = [], setMyTrips, onToggleScrap, onOpenRegion, regions = [] }) {
+export default function MyPage({
+  scrappedRegions = [],
+  myTrips = [],
+  onCreateTrip,
+  onDeleteTrip,
+  onAddPlaceToTrip,
+  onRemovePlaceFromTrip,
+  onToggleScrap,
+  onOpenRegion,
+  regionMap = null,
+  regions = [],
+  isLoggedIn = false,
+}) {
   const [tab, setTab] = useState('scraps');
   const [selectedTrip, setSelectedTrip] = useState(null);
   const [newTripName, setNewTripName] = useState('');
   const [showNewTripForm, setShowNewTripForm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const handleCreateTrip = (e) => {
+  const handleCreateTrip = async (e) => {
     e.preventDefault();
     const name = newTripName.trim();
     if (!name) return;
-    const newTrip = { id: Date.now(), name, createdAt: new Date().toISOString(), places: [] };
-    const next = [...myTrips, newTrip];
-    setMyTrips(next);
-    setNewTripName('');
-    setShowNewTripForm(false);
-    setSelectedTrip(newTrip.id);
+    if (!isLoggedIn) {
+      window.alert('여행 일정은 로그인 후 저장됩니다.');
+      return;
+    }
+    try {
+      const newTrip = await onCreateTrip?.(name);
+      if (!newTrip) return;
+      setNewTripName('');
+      setShowNewTripForm(false);
+      setSelectedTrip(newTrip.id);
+    } catch {
+      window.alert('여행 만들기에 실패했습니다.');
+    }
   };
 
-  const handleDeleteTrip = (tripId) => {
+  const handleDeleteTrip = async (tripId) => {
     if (!window.confirm('이 여행을 삭제할까요?')) return;
-    const next = myTrips.filter(t => t.id !== tripId);
-    setMyTrips(next);
-    if (selectedTrip === tripId) setSelectedTrip(null);
+    try {
+      await onDeleteTrip?.(tripId);
+      if (selectedTrip === tripId) setSelectedTrip(null);
+    } catch {
+      window.alert('여행 삭제에 실패했습니다.');
+    }
   };
 
-  const handleRemovePlaceFromTrip = (tripId, placeId) => {
-    const next = myTrips.map(t => t.id === tripId ? { ...t, places: t.places.filter(p => p.id !== placeId) } : t);
-    setMyTrips(next);
+  const handleRemovePlaceFromTrip = async (tripId, placeId) => {
+    try {
+      await onRemovePlaceFromTrip?.(tripId, placeId);
+    } catch {
+      window.alert('장소 제거에 실패했습니다.');
+    }
   };
 
-  const handleAddPlaceToTrip = (tripId, place) => {
-    const trip = myTrips.find(t => t.id === tripId);
-    if (!trip) return;
-    if (trip.places.some(p => p.id === place.id)) { window.alert('이미 담긴 장소예요!'); return; }
-    const next = myTrips.map(t => t.id === tripId ? { ...t, places: [...t.places, place] } : t);
-    setMyTrips(next);
+  const handleAddPlaceToTrip = async (tripId, place) => {
+    try {
+      await onAddPlaceToTrip?.(tripId, place);
+    } catch {
+      window.alert('장소 추가에 실패했습니다.');
+    }
   };
 
   const currentTrip = myTrips.find(t => t.id === selectedTrip);
-  const filteredRegions = regions.filter(r => r.name?.includes(searchQuery) || r.region?.includes(searchQuery)).slice(0, 12);
+
+  useEffect(() => {
+    setSearchQuery('');
+  }, [selectedTrip]);
+
+  const catalogRegions = useMemo(() => {
+    if (regionMap?.size) {
+      return [...regionMap.values()];
+    }
+    return regions;
+  }, [regionMap, regions]);
+
+  const tripRegionHints = useMemo(
+    () => inferRegionHintsFromTripName(currentTrip?.name),
+    [currentTrip?.name],
+  );
+
+  const filteredRegions = useMemo(
+    () =>
+      searchPlacesForTrip(catalogRegions, {
+        query: searchQuery,
+        tripName: currentTrip?.name,
+        limit: 12,
+      }),
+    [catalogRegions, searchQuery, currentTrip?.name],
+  );
+
+  const searchQueryTrimmed = searchQuery.trim();
 
   return (
     <section style={{ width: '100%' }}>
@@ -59,7 +116,12 @@ export default function MyPage({ scrappedRegions = [], myTrips = [], setMyTrips,
       {/* ── 스크랩 탭 ── */}
       {tab === 'scraps' && (
         <>
-          {scrappedRegions.length === 0 ? (
+          {!isLoggedIn ? (
+            <div className="mypage-empty">
+              <p>스크랩한 장소는 로그인 후 저장됩니다.</p>
+              <p style={{ fontSize: 13, color: '#888' }}>갤러리에서 ♥를 누르면 마이페이지에 모여요.</p>
+            </div>
+          ) : scrappedRegions.length === 0 ? (
             <div className="mypage-empty">
               <p style={{ fontSize: 32, margin: '0 0 12px' }}>♡</p>
               <p style={{ margin: 0 }}>아직 스크랩한 장소가 없어요.</p>
@@ -71,7 +133,7 @@ export default function MyPage({ scrappedRegions = [], myTrips = [], setMyTrips,
                 <article key={region.id} className="region-card">
                   <div className="region-preview" role="button" tabIndex={0} onClick={() => onOpenRegion?.(region)} onKeyDown={e => { if (e.key === 'Enter') onOpenRegion?.(region); }}>
                     <button type="button" className="card-heart-btn active" onClick={e => { e.stopPropagation(); onToggleScrap?.(region.id); }} aria-label="스크랩 해제">♥</button>
-                    <img src={region.imageUrl || CARD_IMAGE_FALLBACK} alt={region.name} className="region-image" onError={e => { e.currentTarget.onerror = null; e.currentTarget.src = CARD_IMAGE_FALLBACK; }} />
+                    <img src={displayImageSrc(region.imageUrl, resolveBackendMediaUrl)} alt={region.name} className="region-image" onError={e => { e.currentTarget.onerror = null; e.currentTarget.src = CARD_PLACEHOLDER_SVG; }} />
                     <div className="region-overlay">
                       <span className="region-overlay-name">{region.name}</span>
                       <p className="region-overlay-summary">{String(region.summary || '').trim() || '정보 없음'}</p>
@@ -108,7 +170,12 @@ export default function MyPage({ scrappedRegions = [], myTrips = [], setMyTrips,
             </form>
           )}
 
-          {myTrips.length === 0 ? (
+          {!isLoggedIn ? (
+            <div className="mypage-empty">
+              <p>여행 일정은 로그인 후 저장됩니다.</p>
+              <p style={{ fontSize: 13, color: '#888' }}>갤러리에서 여행에 담거나, 여기서 새 여행을 만들 수 있어요.</p>
+            </div>
+          ) : myTrips.length === 0 ? (
             <div className="mypage-empty">
               <p style={{ fontSize: 32, margin: '0 0 12px' }}>✈</p>
               <p style={{ margin: 0 }}>아직 만든 여행이 없어요.</p>
@@ -156,7 +223,7 @@ export default function MyPage({ scrappedRegions = [], myTrips = [], setMyTrips,
                       {currentTrip.places.map((place, idx) => (
                         <div key={place.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: '#f8f8f8', borderRadius: 8, border: '1px solid #eee' }}>
                           <span style={{ fontSize: 12, color: '#aaa', fontWeight: 700, minWidth: 20 }}>{idx + 1}</span>
-                          <img src={place.imageUrl || CARD_IMAGE_FALLBACK} alt={place.name} style={{ width: 44, height: 44, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} onError={e => { e.currentTarget.src = CARD_IMAGE_FALLBACK; }} />
+                          <img src={displayImageSrc(place.imageUrl, resolveBackendMediaUrl)} alt={place.name} style={{ width: 44, height: 44, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} onError={e => { e.currentTarget.src = CARD_PLACEHOLDER_SVG; }} />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13, fontWeight: 700, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place.name}</div>
                             <div style={{ fontSize: 11, color: '#888', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place.region || place.address || ''}</div>
@@ -186,12 +253,30 @@ export default function MyPage({ scrappedRegions = [], myTrips = [], setMyTrips,
                       placeholder="장소 이름 또는 지역 검색..."
                       style={{ width: '100%', height: 38, border: '1px solid #e5e5e5', borderRadius: 8, padding: '0 12px', fontSize: 13, outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }}
                     />
+                    {!searchQueryTrimmed && tripRegionHints.length > 0 ? (
+                      <p style={{ margin: '8px 0 0', fontSize: 12, color: '#888' }}>
+                        「{tripRegionHints[0]}」 여행에 맞는 장소를 보여드려요. 다른 지역은 검색해 주세요.
+                      </p>
+                    ) : null}
+                    {!searchQueryTrimmed && tripRegionHints.length === 0 ? (
+                      <p style={{ margin: '8px 0 0', fontSize: 12, color: '#aaa' }}>
+                        장소 이름이나 지역(예: 제주, 부산)을 검색해 주세요.
+                      </p>
+                    ) : null}
+                    {searchQueryTrimmed && filteredRegions.length === 0 ? (
+                      <p style={{ margin: '10px 0 0', fontSize: 12, color: '#aaa' }}>검색 결과가 없어요.</p>
+                    ) : null}
+                    {!searchQueryTrimmed && tripRegionHints.length > 0 && filteredRegions.length === 0 ? (
+                      <p style={{ margin: '10px 0 0', fontSize: 12, color: '#aaa' }}>
+                        이 지역 장소 데이터가 아직 없어요. 검색으로 다른 이름을 찾아보세요.
+                      </p>
+                    ) : null}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10, maxHeight: 240, overflowY: 'auto' }}>
                       {filteredRegions.map(place => {
                         const alreadyIn = currentTrip.places.some(p => p.id === place.id);
                         return (
                           <div key={place.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 7, border: '1px solid #eee', background: '#fafafa' }}>
-                            <img src={place.imageUrl || CARD_IMAGE_FALLBACK} alt={place.name} style={{ width: 36, height: 36, borderRadius: 5, objectFit: 'cover', flexShrink: 0 }} onError={e => { e.currentTarget.src = CARD_IMAGE_FALLBACK; }} />
+                            <img src={displayImageSrc(place.imageUrl, resolveBackendMediaUrl)} alt={place.name} style={{ width: 36, height: 36, borderRadius: 5, objectFit: 'cover', flexShrink: 0 }} onError={e => { e.currentTarget.src = CARD_PLACEHOLDER_SVG; }} />
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 13, fontWeight: 600, color: '#111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place.name}</div>
                               <div style={{ fontSize: 11, color: '#888' }}>{place.region || ''}</div>

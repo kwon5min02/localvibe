@@ -124,8 +124,8 @@ def _stable_region_id(value: str) -> int:
 
 
 def _fallback_image_for_name(name: str) -> str:
-    index = _stable_region_id(name) % len(FALLBACK_IMAGE_POOL)
-    return FALLBACK_IMAGE_POOL[index]
+    """더 이상 DB에 placeholder 이미지를 넣지 않음 (프론트에서만 처리)."""
+    return ""
 
 
 def _sanitize_image_url(raw_url: str) -> str:
@@ -144,7 +144,9 @@ def _sanitize_image_url(raw_url: str) -> str:
 
     if not image_url.startswith("http"):
         return ""
-    return image_url
+    from app.services.media_utils import sanitize_display_image_url
+
+    return sanitize_display_image_url(image_url)
 
 
 def _masked_key(value: str) -> str:
@@ -632,7 +634,9 @@ def _extract_region_from_address(address: str) -> str:
 
 
 def _is_fallback_image_url(url: str) -> bool:
-    return "images.unsplash.com" in (url or "")
+    from app.services.media_utils import is_placeholder_image_url
+
+    return is_placeholder_image_url(url)
 
 
 KTO_CONTENT_TYPE_LABELS = {

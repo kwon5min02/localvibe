@@ -12,3 +12,5 @@ cryptography
 pinecone
 sentence-transformers
 apscheduler
+dspy-ai
+optuna

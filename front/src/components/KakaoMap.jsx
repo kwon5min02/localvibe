@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { geocodeAddressWithKakao, KAKAO_JS_KEY, loadKakaoSdk } from "../utils/kakaoMapSdk";
 
-const KAKAO_JS_KEY = import.meta.env.VITE_KAKAO_JS_KEY || "0da5b46d0248e671b357568d3720d935";
-const KAKAO_SCRIPT_ID = "kakao-map-sdk-script";
 const MARKER_IMAGE_URL = "https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png";
 
 function hasValidCoord(latitude, longitude) {
@@ -16,78 +15,6 @@ function buildKakaoMapUrl(address, latitude, longitude) {
     return "";
   }
   return `https://map.kakao.com/link/search/${encodeURIComponent(address)}`;
-}
-
-/** 서비스(지오코더) 포함 — 좌표 없을 때 주소로 지도 표시 */
-function createSdkUrl() {
-  return `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_JS_KEY}&autoload=false&libraries=services`;
-}
-
-function loadKakaoSdk() {
-  return new Promise((resolve, reject) => {
-    if (window.kakao?.maps?.load && window.kakao?.maps?.services?.Geocoder) {
-      window.kakao.maps.load(() => resolve(window.kakao));
-      return;
-    }
-    if (!KAKAO_JS_KEY) {
-      reject(new Error("missing_key"));
-      return;
-    }
-
-    if (
-      document.getElementById(KAKAO_SCRIPT_ID) &&
-      window.kakao?.maps?.load &&
-      !window.kakao?.maps?.services?.Geocoder
-    ) {
-      const stale = document.getElementById(KAKAO_SCRIPT_ID);
-      if (stale) {
-        stale.remove();
-      }
-      try {
-        delete window.kakao;
-      } catch (_) {
-        window.kakao = undefined;
-      }
-    }
-
-    const mountScript = (removeExisting = false) =>
-      new Promise((innerResolve, innerReject) => {
-        if (removeExisting) {
-          const stale = document.getElementById(KAKAO_SCRIPT_ID);
-          if (stale) {
-            stale.remove();
-          }
-        }
-
-        const existing = document.getElementById(KAKAO_SCRIPT_ID);
-        if (existing) {
-          existing.addEventListener("load", () => innerResolve(window.kakao), { once: true });
-          existing.addEventListener("error", () => innerReject(new Error("sdk_blocked")), { once: true });
-          return;
-        }
-
-        const script = document.createElement("script");
-        script.id = KAKAO_SCRIPT_ID;
-        script.async = true;
-        script.src = `${createSdkUrl()}&_ts=${Date.now()}`;
-        script.onload = () => innerResolve(window.kakao);
-        script.onerror = () => innerReject(new Error("sdk_blocked"));
-        document.head.appendChild(script);
-      });
-
-    const timeout = setTimeout(() => reject(new Error("sdk_timeout")), 8000);
-
-    mountScript(false)
-      .catch(() => mountScript(true))
-      .then(() => {
-        if (!window.kakao?.maps?.load) {
-          throw new Error("sdk_blocked");
-        }
-        window.kakao.maps.load(() => resolve(window.kakao));
-      })
-      .catch((error) => reject(error))
-      .finally(() => clearTimeout(timeout));
-  });
 }
 
 export default function KakaoMap({ address, latitude, longitude }) {
@@ -154,13 +81,10 @@ export default function KakaoMap({ address, latitude, longitude }) {
           return;
         }
 
-        const geocoder = new kakao.maps.services.Geocoder();
-        geocoder.addressSearch(addr, (result, status) => {
-          if (!active) {
-            return;
-          }
-          if (status === kakao.maps.services.Status.OK && result?.[0]) {
-            paint(parseFloat(result[0].y), parseFloat(result[0].x));
+        geocodeAddressWithKakao(kakao, addr).then(pos => {
+          if (!active) return;
+          if (pos) {
+            paint(pos.lat, pos.lng);
           } else {
             setError("주소를 지도 위치로 찾지 못했습니다.");
           }
