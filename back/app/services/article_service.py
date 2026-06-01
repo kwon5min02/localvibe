@@ -1,4 +1,4 @@
-"""갤러리 온디맨드 아티클: DOCUMENTS 캐시 + 크롤링 + GPT + 임베딩."""
+"""갤러리 아티클: DOCUMENTS 캐시 + 사전 크롤링 텍스트 + PLACES 정보 + GPT + 임베딩."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from openai import OpenAI
 from app.repositories import documents_store, places_store, trends_store
 from app.repositories.db import session_scope
 from app.services import embedding_service
-from app.services.naverBlog_crawling import crawl_naver_blog_for_place
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -24,7 +23,9 @@ def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", " ", text)
 
 
-def _generate_article_with_gpt(place_name: str, description: str, blog_blob: str) -> tuple[str, str]:
+def _generate_article_with_gpt(
+    place_name: str, description: str, blog_blob: str
+) -> tuple[str, str]:
     api_key = os.getenv("OPEN_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         title = f"{place_name} 여행 스팟"
@@ -96,13 +97,10 @@ def get_or_create_article(place_id: int) -> dict[str, Any]:
         preg = place.region
         pprov = place.province
 
-    region_kw = " ".join(x for x in (preg or "", pprov or "") if x).strip()
-    blog_blob, _serve_urls = crawl_naver_blog_for_place(
-        place_name=pname,
-        place_id=place_id,
-        max_results=int(os.getenv("NAVER_BLOG_MAX_RESULTS", "3")),
-        region=region_kw,
-    )
+        crawled_texts = places_store.list_crawled_texts_for_place(session, place_id)
+        blog_blob = "\n\n".join(
+            str(r.content)[:4000] for r in crawled_texts if r.content
+        )
 
     title, content = _generate_article_with_gpt(pname, pdesc, blog_blob)
 
@@ -124,10 +122,14 @@ def get_or_create_article(place_id: int) -> dict[str, Any]:
 
         doc = documents_store.get_document_by_place_id(session, place_id)
         if doc:
-            documents_store.update_document_content(session, doc, title=title, content=content)
+            documents_store.update_document_content(
+                session, doc, title=title, content=content
+            )
             doc_id = doc.doc_id
         else:
-            doc = documents_store.create_document(session, place_id=place_id, title=title, content=content)
+            doc = documents_store.create_document(
+                session, place_id=place_id, title=title, content=content
+            )
             doc_id = doc.doc_id
 
         vec_id = embedding_service.embed_and_upsert(
@@ -143,12 +145,13 @@ def get_or_create_article(place_id: int) -> dict[str, Any]:
             documents_store.set_pinecone_id(session, doc_id, vec_id)
 
         final_doc = documents_store.get_document_by_place_id(session, place_id)
+        final_pinecone_id = final_doc.pinecone_id if final_doc else vec_id
 
     return {
         "place_id": place_id,
         "doc_id": doc_id,
         "title": title,
         "content": content,
-        "pinecone_id": (final_doc.pinecone_id if final_doc else vec_id),
+        "pinecone_id": final_pinecone_id,
         "cached": False,
     }

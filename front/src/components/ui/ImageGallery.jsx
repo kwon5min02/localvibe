@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { resolveBackendMediaUrl } from '../../utils/apiMediaUrl';
 
 export default function ImageGallery({ images = [] }) {
   const [lightbox, setLightbox] = useState(null);
@@ -21,7 +22,7 @@ export default function ImageGallery({ images = [] }) {
             onClick={() => setLightbox(img)}
           >
             <img
-              src={img.imageUrl}
+              src={resolveBackendMediaUrl(img.imageUrl)}
               alt={img.name}
               className="gallery-img"
               onError={e => { e.target.closest('.gallery-item').style.display = 'none'; }}
@@ -50,7 +51,7 @@ export default function ImageGallery({ images = [] }) {
               exit={{ scale: 0.85 }}
               onClick={e => e.stopPropagation()}
             >
-              <img src={lightbox.imageUrl} alt={lightbox.name} />
+              <img src={resolveBackendMediaUrl(lightbox.imageUrl)} alt={lightbox.name} />
               <p className="lightbox-name">{lightbox.name}</p>
               {lightbox.caption && <p className="lightbox-caption">{lightbox.caption}</p>}
               <button className="lightbox-close" onClick={() => setLightbox(null)}>✕</button>

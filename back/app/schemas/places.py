@@ -20,6 +20,22 @@ class PlaceImagesResponse(BaseModel):
     images: list[PlaceImageItem]
 
 
+class PlaceTextItem(BaseModel):
+    text_id: int
+    blog_url: Optional[str] = None
+    blog_title: Optional[str] = None
+    blogger_name: Optional[str] = None
+    post_date: Optional[str] = None
+    description: Optional[str] = None
+    content: Optional[str] = None
+    content_length: Optional[int] = None
+
+
+class PlaceTextsResponse(BaseModel):
+    place_id: int
+    texts: list[PlaceTextItem]
+
+
 class GallerySearchItem(BaseModel):
     place_id: int
     name: str

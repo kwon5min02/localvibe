@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import KakaoMap from "./KakaoMap";
+import { resolveBackendMediaUrl } from "../utils/apiMediaUrl";
 
 /* ── 인사이트 정규화 ── */
 function normalizeInsightValues(values = []) {
@@ -27,14 +28,6 @@ function toCardItems(region) {
     const cleaned = normalizeInsightValues(card.values);
     return { ...card, values: cleaned.length > 0 ? cleaned.slice(0, 4) : buildFallbackValues(card.title, region) };
   });
-}
-
-function resolveMediaUrl(url, apiBaseUrl) {
-  const u = String(url || "").trim();
-  if (!u) return "";
-  if (u.startsWith("http://") || u.startsWith("https://")) return u;
-  const base = String(apiBaseUrl || "").replace(/\/$/, "");
-  return u.startsWith("/") && base ? `${base}${u}` : u;
 }
 
 /* ── 하드코딩 아티클 (백엔드 연동 전) ── */
@@ -224,8 +217,8 @@ export default function RegionModal({
 
   // 이미지 목록: 크롤링 이미지 + 대표 이미지
   const allImages = [
-    ...(region.imageUrl ? [region.imageUrl] : []),
-    ...crawlImageUrls.map(u => resolveMediaUrl(u, apiBaseUrl)),
+    ...(region.imageUrl ? [resolveBackendMediaUrl(region.imageUrl, apiBaseUrl)] : []),
+    ...crawlImageUrls.map(u => resolveBackendMediaUrl(u, apiBaseUrl)),
   ].filter(Boolean);
 
   // 아티클: 백엔드 연동 전엔 하드코딩

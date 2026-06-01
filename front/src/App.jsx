@@ -8,6 +8,13 @@ import RegionModal from './components/RegionModal';
 import { defaultRegions } from './data/defaultRegions';
 import TripPlannerPage from './pages/TripPlannerPage';
 import MyPage from './pages/MyPage';
+import { normalizeRegionMediaFields, resolveBackendMediaUrl } from './utils/apiMediaUrl';
+import ContactModal from './components/ContactModal';
+import { addScrap, fetchScraps, removeScrap } from './utils/api';
+
+const DEFAULT_REGIONS_NORMALIZED = defaultRegions.map((r) =>
+  normalizeRegionMediaFields({ ...r }),
+);
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 const FEED_SIZE = 9;
@@ -22,7 +29,18 @@ function readInitialSidebarWidth() {
   try { const raw = localStorage.getItem(SIDEBAR_WIDTH_KEY); const n = Number(raw); return Number.isFinite(n) ? Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(n))) : SIDEBAR_WIDTH_DEFAULT; } catch { return SIDEBAR_WIDTH_DEFAULT; }
 }
 function isGalleryVectorFeedLocked() { try { return sessionStorage.getItem(GALLERY_VECTOR_ACTIVE_KEY) === '1'; } catch { return false; } }
-function readPersistedGalleryRegions() { try { if (sessionStorage.getItem(GALLERY_VECTOR_ACTIVE_KEY) !== '1') return null; const raw = sessionStorage.getItem(GALLERY_SEARCH_RESULTS_KEY); if (!raw) return null; const arr = JSON.parse(raw); return Array.isArray(arr) && arr.length > 0 ? arr : null; } catch { return null; } }
+function readPersistedGalleryRegions() {
+  try {
+    if (sessionStorage.getItem(GALLERY_VECTOR_ACTIVE_KEY) !== '1') return null;
+    const raw = sessionStorage.getItem(GALLERY_SEARCH_RESULTS_KEY);
+    if (!raw) return null;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    return arr.map((r) => normalizeRegionMediaFields({ ...r }));
+  } catch {
+    return null;
+  }
+}
 function persistGalleryVectorResults(mapped) { try { sessionStorage.setItem(GALLERY_VECTOR_ACTIVE_KEY, '1'); sessionStorage.setItem(GALLERY_SEARCH_RESULTS_KEY, JSON.stringify(mapped)); } catch {} }
 
 const REGION_TREE = [
@@ -128,13 +146,14 @@ function SidebarAccount({ currentUser, onAccountClick, onLoginClick }) {
 export default function App() {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState(() => { try { const raw = localStorage.getItem('lv_user'); return raw ? JSON.parse(raw) : null; } catch { return null; } });
-  const [regions, setRegions] = useState(defaultRegions);
-  const [displayedRegions, setDisplayedRegions] = useState(() => readPersistedGalleryRegions() ?? defaultRegions);
+  const [regions, setRegions] = useState(DEFAULT_REGIONS_NORMALIZED);
+  const [displayedRegions, setDisplayedRegions] = useState(() => readPersistedGalleryRegions() ?? DEFAULT_REGIONS_NORMALIZED);
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [insightRegion, setInsightRegion] = useState(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('gallery');
   const [scrappedIds, setScrappedIds] = useState(() => { try { const p = JSON.parse(localStorage.getItem('lv_scraps') || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } });
+  const [contactOpen, setContactOpen] = useState(false);
   const [myTrips, setMyTrips] = useState(() => { try { const p = JSON.parse(localStorage.getItem('lv_my_trips') || '[]'); return Array.isArray(p) ? p : []; } catch { return []; } });
   const [modalCrawlImages, setModalCrawlImages] = useState([]);
   const [modalArticle, setModalArticle] = useState(null);
@@ -156,9 +175,9 @@ export default function App() {
 
   useEffect(() => { const sync = () => { try { const raw = localStorage.getItem('lv_user'); setCurrentUser(raw ? JSON.parse(raw) : null); } catch { setCurrentUser(null); } }; window.addEventListener('lv-auth-changed', sync); return () => window.removeEventListener('lv-auth-changed', sync); }, []);
 
-  useEffect(() => { let m = true; fetch(`${API_BASE_URL}/api/regions`).then(r => r.ok ? r.json() : null).then(data => { if (!m || !Array.isArray(data?.regions) || !data.regions.length) return; setRegions(data.regions); if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) setDisplayedRegions(pickFeedItems(data.regions)); }).catch(() => { if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) setDisplayedRegions(pickFeedItems(defaultRegions)); }); return () => { m = false; }; }, []);
+  useEffect(() => { let m = true; fetch(`${API_BASE_URL}/api/regions`).then(r => r.ok ? r.json() : null).then(data => { if (!m || !Array.isArray(data?.regions) || !data.regions.length) return; const normalized = data.regions.map((r) => normalizeRegionMediaFields({ ...r })); setRegions(normalized); if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) setDisplayedRegions(pickFeedItems(normalized)); }).catch(() => { if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) setDisplayedRegions(pickFeedItems(DEFAULT_REGIONS_NORMALIZED)); }); return () => { m = false; }; }, []);
 
-  useEffect(() => { let m = true; if (!selectedRegion?.id) { setInsightRegion(null); return; } setIsInsightLoading(true); fetch(`${API_BASE_URL}/api/regions/${selectedRegion.id}/insight`).then(r => r.ok ? r.json() : null).then(data => { if (m && data?.region) setInsightRegion(data.region); }).catch(() => {}).finally(() => { if (m) setIsInsightLoading(false); }); return () => { m = false; }; }, [selectedRegion]);
+  useEffect(() => { let m = true; if (!selectedRegion?.id) { setInsightRegion(null); return; } setIsInsightLoading(true); fetch(`${API_BASE_URL}/api/regions/${selectedRegion.id}/insight`).then(r => r.ok ? r.json() : null).then(data => { if (m && data?.region) setInsightRegion(normalizeRegionMediaFields({ ...data.region })); }).catch(() => {}).finally(() => { if (m) setIsInsightLoading(false); }); return () => { m = false; }; }, [selectedRegion]);
 
   useEffect(() => {
     const id = selectedRegion?.id; if (!id) { setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(false); return; }
@@ -166,7 +185,7 @@ export default function App() {
     (async () => {
       try {
         await fetch(`${API_BASE_URL}/api/places/${id}/crawl`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); if (cancelled) return;
-        const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`); if (imgRes.ok && !cancelled) { const d = await imgRes.json(); setModalCrawlImages((d.images || []).map(x => x.url).filter(Boolean)); }
+        const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`); if (imgRes.ok && !cancelled) { const d = await imgRes.json(); setModalCrawlImages((d.images || []).map(x => x.url).filter(Boolean).map(u => resolveBackendMediaUrl(u))); }
         if (cancelled) return; const artRes = await fetch(`${API_BASE_URL}/api/places/${id}/article`); if (cancelled) return;
         if (artRes.ok) { const a = await artRes.json(); if (!cancelled) setModalArticle({ title: a.title || '', content: a.content || '' }); }
         else if (!cancelled) setModalArticle(null); // 실패 시 null → 모달에서 하드코딩 아티클 표시
@@ -184,6 +203,20 @@ export default function App() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [accountPopupOpen]);
+
+  // 로그인 시 서버 스크랩 목록으로 동기화
+  useEffect(() => {
+    const token = localStorage.getItem('lv_access_token');
+    if (!token) return;
+    fetchScraps()
+      .then(ids => {
+        if (ids.length > 0) {
+          setScrappedIds(ids);
+          localStorage.setItem('lv_scraps', JSON.stringify(ids));
+        }
+      })
+      .catch(() => {}); // 실패 시 localStorage 유지
+  }, [currentUser]); // 로그인 상태 변경 시 재실행
 
   const handleSidebarResizePointerDown = useCallback((e) => {
     if (e.button !== 0) return; e.preventDefault();
@@ -212,7 +245,9 @@ export default function App() {
       const res = await fetch(url.toString()); if (seq !== gallerySearchSeqRef.current) return false;
       if (!res.ok) { window.alert('검색 요청에 실패했습니다.'); return false; }
       const data = await res.json();
-      const mapped = (Array.isArray(data?.results) ? data.results : []).map(row => mapSearchHitToRegion(row, regionMap));
+      const mapped = (Array.isArray(data?.results) ? data.results : []).map(row =>
+        normalizeRegionMediaFields(mapSearchHitToRegion(row, regionMap)),
+      );
       if (seq !== gallerySearchSeqRef.current) return false;
       if (mapped.length > 0) { galleryVectorSearchActiveRef.current = true; persistGalleryVectorResults(mapped); setDisplayedRegions(mapped); return true; }
       window.alert('검색 결과가 없습니다.'); return false;
@@ -236,9 +271,37 @@ export default function App() {
     finally { setChatbotBusy(false); }
   };
 
-  const handleToggleScrap = useCallback((regionId) => {
-    setScrappedIds(prev => { const next = prev.includes(regionId) ? prev.filter(id => id !== regionId) : [...prev, regionId]; localStorage.setItem('lv_scraps', JSON.stringify(next)); return next; });
-  }, []);
+  const handleToggleScrap = useCallback(async (regionId) => {
+    const token = localStorage.getItem('lv_access_token');
+    const isCurrentlyScrapped = scrappedIds.includes(regionId); // 낙관적 업데이트 전에 먼저 체크
+
+    setScrappedIds(prev => {
+      const next = isCurrentlyScrapped
+        ? prev.filter(id => id !== regionId)
+        : [...prev, regionId];
+      localStorage.setItem('lv_scraps', JSON.stringify(next));
+      return next;
+    });
+
+    if (token) {
+      try {
+        if (isCurrentlyScrapped) {
+          await removeScrap(regionId);
+        } else {
+          await addScrap(regionId);
+        }
+      } catch {
+        // 롤백
+        setScrappedIds(prev => {
+          const next = isCurrentlyScrapped
+            ? [...prev, regionId]
+            : prev.filter(id => id !== regionId);
+          localStorage.setItem('lv_scraps', JSON.stringify(next));
+          return next;
+        });
+      }
+    }
+  }, [scrappedIds]);
 
   const handleRequestAddToTrip = useCallback((region) => { setTripSelectRegion(region); }, []);
 
@@ -330,7 +393,14 @@ export default function App() {
 
             <div className="sidebar-section-title" style={{ marginTop: 14 }}>정보</div>
             <div className="sidebar-static-link">💡 서비스 소개</div>
-            <div className="sidebar-static-link">📬 문의하기</div>
+            <button
+              type="button"
+              className="sidebar-link"
+              onClick={() => setContactOpen(true)}
+            >
+              📬 문의하기
+            </button>
+
           </div>
 
           {/* ── 하단 계정 영역 ── */}
@@ -395,7 +465,14 @@ export default function App() {
               />
             </>
           )}
-          {activeTab === 'planner' && <TripPlannerPage regions={regions} />}
+          {activeTab === 'planner' && (
+            <TripPlannerPage
+              regions={regions}
+              scrappedIds={scrappedIds}
+              onToggleScrap={handleToggleScrap}
+              onAddToTrip={handleRequestAddToTrip}   // ← 추가
+            />
+          )}
           {activeTab === 'mypage' && (
             <MyPage
               scrappedRegions={scrappedRegions}
@@ -466,6 +543,9 @@ export default function App() {
         onAddToTrip={handleRequestAddToTrip}
         onClose={() => { setSelectedRegion(null); setInsightRegion(null); setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(false); }}
       />
+      
+      {/* 문의하기 모달 */}
+      <ContactModal isOpen={contactOpen} onClose={() => setContactOpen(false)} />
     </div>
   );
 }

@@ -73,7 +73,9 @@ class NaverBlogCrawler:
                             else self.naver_base_url + src
                         )
                     try:
-                        inner = requests.get(src, headers=self._crawl_headers, timeout=12)
+                        inner = requests.get(
+                            src, headers=self._crawl_headers, timeout=12
+                        )
                         inner.encoding = "utf-8"
                         soup = BeautifulSoup(inner.text, "html.parser")
                     except Exception:
@@ -188,66 +190,7 @@ class NaverBlogCrawler:
             time.sleep(0.5)
         return all_data
 
-    def crawl_and_save_images(
-        self,
-        place_id: int,
-        keyword: str,
-        max_posts: int = 3,
-        max_images_per_post: int = 3,
-    ) -> List[Dict]:
-        from app.repositories import places_store
-        from app.repositories.db import session_scope
 
-        posts = self.search_blog(keyword, display=max_posts)
-        saved: List[Dict] = []
-
-        for post in posts:
-            image_urls = self.extract_blog_images(
-                post["link"], max_images=max_images_per_post * 2
-            )
-            for img_url in image_urls[: max_images_per_post * 2]:
-                meta = self.download_image(img_url, place_id)
-                if not meta:
-                    continue
-                if not os.getenv("MYSQL_URL", "").strip():
-                    saved.append(meta)
-                    continue
-                with session_scope() as session:
-                    if places_store.crawled_image_exists(
-                        session, place_id=place_id, source_url=meta["source_url"]
-                    ):
-                        continue
-                    places_store.add_crawled_image(
-                        session,
-                        place_id=place_id,
-                        source_url=meta["source_url"],
-                        local_path=meta["local_path"],
-                        serve_url=meta["serve_url"],
-                    )
-                saved.append(meta)
-            time.sleep(0.4)
-
-        return saved
-
-
-def crawl_place_text_on_demand(
-    name: str, region: str = "", max_posts: int = 3
-) -> List[Dict]:
-    """블로그 본문 텍스트만 수집 (아티클 GPT 입력용)."""
-    crawler = _get_crawler()
-    if not crawler:
-        return []
-    keyword = f"{name} {region}".strip()
-    return crawler.crawl_blogs([keyword], max_results_per_shop=max_posts)
-
-
-def crawl_place_on_demand(place_id: int, name: str, region: str = "") -> List[Dict]:
-    """이미지 다운로드 + CRAWLED_IMAGES 저장 (serve_url 반환)."""
-    crawler = _get_crawler()
-    if not crawler:
-        return []
-    keyword = f"{name} {region}".strip()
-    return crawler.crawl_and_save_images(place_id=place_id, keyword=keyword)
 
 
 def crawl_naver_blog_for_place(
@@ -255,16 +198,26 @@ def crawl_naver_blog_for_place(
     place_id: int,
     max_results: int = 3,
     region: str = "",
+    category: str = "",
+    address: str = "",
 ) -> Tuple[str, List[str]]:
     """
-    한 번의 검색으로 본문 텍스트 + 이미지(중복 source_url 제외) 수집.
-    region 은 검색 키워드 보강(예: '강릉').
+    한 장소: 네이버 검색 → 포스트 URL별 본문 텍스트 수집 및 DB 저장.
+    (이미지 수집 코드는 유지하되 아래 루프를 주석 처리해 비활성화 — 재사용 시 주석 해제.)
     """
     crawler = _get_crawler()
     if not crawler:
         return "", []
 
-    keyword = f"{place_name} {region}".strip()
+    # 따옴표로 장소명 exact match + 주소/카테고리 보강
+    parts = [f'"{place_name}"']
+    if address:
+        parts.append(address)
+    elif region:
+        parts.append(region)
+    if category:
+        parts.append(category)
+    keyword = " ".join(parts)
     posts = crawler.search_blog(keyword, display=max_results)
     texts: List[str] = []
     serve_saved: List[str] = []
@@ -272,36 +225,52 @@ def crawl_naver_blog_for_place(
     from app.repositories import places_store
     from app.repositories.db import session_scope
 
+    use_db = bool(os.getenv("MYSQL_URL", "").strip())
+
     for post in posts:
         link = post.get("link") or ""
-        if link:
-            body = crawler.extract_blog_content(link)
-            if body:
-                texts.append(str(body)[:4000])
-
-        if not link:
+        if not link or "blog.naver.com" not in link:
             time.sleep(0.25)
             continue
 
-        for img_url in crawler.extract_blog_images(link, max_images=6)[:3]:
-            meta = crawler.download_image(img_url, place_id)
-            if not meta:
-                continue
-            if os.getenv("MYSQL_URL", "").strip():
-                with session_scope() as session:
-                    if places_store.crawled_image_exists(
-                        session, place_id=place_id, source_url=meta["source_url"]
-                    ):
-                        serve_saved.append(meta["serve_url"])
-                        continue
-                    places_store.add_crawled_image(
-                        session,
-                        place_id=place_id,
-                        source_url=meta["source_url"],
-                        local_path=meta["local_path"],
-                        serve_url=meta["serve_url"],
-                    )
-            serve_saved.append(meta["serve_url"])
+        body = crawler.extract_blog_content(link)
+        if body:
+            texts.append(str(body)[:4000])
+
+        if use_db:
+            blog_data = {
+                "blog_url": link,
+                "blog_title": post.get("title"),
+                "blogger_name": post.get("blogger_name"),
+                "post_date": post.get("post_date"),
+                "description": post.get("description"),
+                "content": body,
+                "content_length": len(body) if body else 0,
+            }
+            with session_scope() as session:
+                if not places_store.crawled_text_exists(session, place_id=place_id, blog_url=link):
+                    places_store.add_crawled_text(session, place_id=place_id, blog_data=blog_data)
+
+        # 블로그 이미지 수집 비활성화 (필요 시 아래 for 블록 주석 해제)
+        # for img_url in crawler.extract_blog_images(link, max_images=6)[:3]:
+        #     meta = crawler.download_image(img_url, place_id)
+        #     if not meta:
+        #         continue
+        #     if use_db:
+        #         with session_scope() as session:
+        #             if places_store.crawled_image_exists(
+        #                 session, place_id=place_id, source_url=meta["source_url"]
+        #             ):
+        #                 serve_saved.append(meta["serve_url"])
+        #                 continue
+        #             places_store.add_crawled_image(
+        #                 session,
+        #                 place_id=place_id,
+        #                 source_url=meta["source_url"],
+        #                 local_path=meta["local_path"],
+        #                 serve_url=meta["serve_url"],
+        #             )
+        #     serve_saved.append(meta["serve_url"])
 
         time.sleep(0.35)
 
@@ -311,19 +280,3 @@ def crawl_naver_blog_for_place(
 def save_to_json(data: List[Dict], output_file: str) -> None:
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def main():
-    load_dotenv()
-    cid = os.getenv("NAVER_CLIENT_ID", "")
-    csec = os.getenv("NAVER_CLIENT_SECRET", "")
-    if not cid or not csec:
-        print("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 을 .env 에 설정하세요.")
-        return
-    rows = crawl_place_text_on_demand(name="성수동 카페", region="서울", max_posts=2)
-    for r in rows:
-        print(r.get("blog_title"), "-", r.get("content_length"), "자")
-
-
-if __name__ == "__main__":
-    main()

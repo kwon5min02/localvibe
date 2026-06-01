@@ -13,3 +13,16 @@ def __getattr__(name: str):
 
         return _create_app
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+from .scraps_trips import router as scraps_trips_router
+
+__all__ = [
+    "auth_router",
+    "chat_router",
+    "health_router",
+    "places_router",
+    "regions_router",
+    "search_router",
+    "visual_router",
+    "scraps_trips_router",  # 추가
+]

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -443,6 +444,61 @@ def _fetch_course_images_for_info_ids(
     return image_map
 
 
+def _extract_kto_total_count(payload: dict) -> int:
+    """TourAPI JSON 바디의 totalCount (없으면 0). 페이지 종료 계산용."""
+    try:
+        body = (payload.get("response") or {}).get("body") or {}
+        raw = body.get("totalCount", body.get("totalcount"))
+        if raw is None or raw == "":
+            return 0
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _fetch_kto_list_page(
+    url: str,
+    params: dict[str, str],
+    timeout_seconds: int,
+    retry_count: int,
+    base_retry_wait: float,
+    rate_limit_wait: float,
+) -> tuple[list[dict], int]:
+    """TourAPI 목록 호출 한 페이지. 반환 (items, totalCount). 에러 시 ([], 0)."""
+    request_url = f"{url}?{urllib.parse.urlencode(params)}"
+    for attempt in range(1, retry_count + 1):
+        try:
+            request = urllib.request.Request(url=request_url, method="GET")
+            with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+                body = response.read().decode("utf-8", errors="ignore")
+            payload = json.loads(body)
+            header = payload.get("response", {}).get("header", {})
+            result_code = str(header.get("resultCode", "")).strip()
+            result_msg = str(header.get("resultMsg", "")).strip()
+            if result_code and result_code not in {"0000", "00"}:
+                logger.warning("[KTO] api error endpoint=%s code=%s msg=%s", url, result_code, result_msg)
+                return [], 0
+            items = _extract_json_items(payload)
+            total = _extract_kto_total_count(payload)
+            return items, total
+        except urllib.error.HTTPError as exc:
+            if exc.code == 429 and attempt < retry_count:
+                time.sleep(rate_limit_wait * attempt)
+                continue
+            if attempt < retry_count:
+                time.sleep(base_retry_wait * attempt)
+                continue
+            logger.warning("[KTO] http failed endpoint=%s code=%s", url, exc.code)
+            return [], 0
+        except Exception as exc:
+            if attempt < retry_count:
+                time.sleep(base_retry_wait * attempt)
+                continue
+            logger.warning("[KTO] request failed endpoint=%s error=%s", url, exc)
+            return [], 0
+    return [], 0
+
+
 def _extract_json_items(payload: dict) -> list[dict]:
     response = payload.get("response", {})
     body = response.get("body", {})
@@ -589,6 +645,9 @@ KTO_CONTENT_TYPE_LABELS = {
     "38": "쇼핑",
     "39": "음식점",
 }
+
+# data_pipeline·PLACES 적재 전에 목록 단계에서 제외 (quota를 축제/코스에 쓰이지 않게)
+KTO_DATA_PIPELINE_SKIP_CONTENTTYPE_IDS = frozenset({"15", "25"})
 
 
 def _infer_kto_insight_fields(title: str, overview: str, content_type: str, address: str) -> tuple[list[str], list[str], list[str]]:
@@ -741,13 +800,24 @@ def _fetch_kto_regions(kto_service_key: str, timeout_seconds: int, retry_count: 
     mobile_app = os.getenv("KTO_MOBILE_APP", "LocalVibe")
     arrange = os.getenv("KTO_ARRANGE", "Q")
 
+    try:
+        start_page_int = max(1, int(str(start_page).strip()))
+    except ValueError:
+        start_page_int = 1
+    try:
+        page_size_int = max(1, int(str(page_size).strip()))
+    except ValueError:
+        page_size_int = 30
+    area_max_pages = max(1, int(os.getenv("KTO_AREA_MAX_PAGES", "400")))
+    keyword_max_pages = max(1, int(os.getenv("KTO_KEYWORD_MAX_PAGES", "400")))
+
     common_params = {
         "serviceKey": kto_service_key,
         "MobileOS": mobile_os,
         "MobileApp": mobile_app,
         "_type": "json",
-        "numOfRows": page_size,
-        "pageNo": start_page,
+        "numOfRows": str(page_size_int),
+        "pageNo": str(start_page_int),
         "arrange": arrange,
     }
 
@@ -756,29 +826,26 @@ def _fetch_kto_regions(kto_service_key: str, timeout_seconds: int, retry_count: 
     source_name = "한국관광공사_국문 관광정보 서비스_GW"
 
     for area_code in area_codes:
-        params = dict(common_params)
-        params["areaCode"] = area_code
-        items = _fetch_json_items(area_endpoint, params, timeout_seconds, retry_count, base_retry_wait, rate_limit_wait)
-        for item in items:
-            cid = str(item.get("contentid", "")).strip()
-            if not cid or cid in seen_content_ids:
-                continue
-            seen_content_ids.add(cid)
-            collected.append(item)
-            if len(collected) >= max_items:
-                break
         if len(collected) >= max_items:
             break
-        if request_interval > 0:
-            time.sleep(request_interval)
-
-    if keywords and len(collected) < max_items:
-        for keyword in keywords:
+        page_no = start_page_int
+        pages_this_area = 0
+        while len(collected) < max_items and pages_this_area < area_max_pages:
             params = dict(common_params)
-            params["keyword"] = keyword
-            items = _fetch_json_items(keyword_endpoint, params, timeout_seconds, retry_count, base_retry_wait, rate_limit_wait)
+            params["areaCode"] = area_code
+            params["pageNo"] = str(page_no)
+            params["numOfRows"] = str(page_size_int)
+            items, total_count = _fetch_kto_list_page(
+                area_endpoint, params, timeout_seconds, retry_count, base_retry_wait, rate_limit_wait
+            )
+            pages_this_area += 1
+            if not items:
+                break
             for item in items:
                 cid = str(item.get("contentid", "")).strip()
+                ctype = str(item.get("contenttypeid", "") or item.get("contentTypeId", "")).strip()
+                if ctype in KTO_DATA_PIPELINE_SKIP_CONTENTTYPE_IDS:
+                    continue
                 if not cid or cid in seen_content_ids:
                     continue
                 seen_content_ids.add(cid)
@@ -787,11 +854,75 @@ def _fetch_kto_regions(kto_service_key: str, timeout_seconds: int, retry_count: 
                     break
             if len(collected) >= max_items:
                 break
+            last_page_full = len(items) >= page_size_int
+            if total_count > 0:
+                pages_total = math.ceil(total_count / page_size_int)
+                if pages_total <= 0 or page_no >= pages_total:
+                    break
+                if last_page_full is False:
+                    break
+            elif not last_page_full:
+                break
+            page_no += 1
+            if request_interval > 0:
+                time.sleep(request_interval)
+
+        if len(collected) >= max_items:
+            break
+        if request_interval > 0:
+            time.sleep(request_interval)
+
+    if keywords and len(collected) < max_items:
+        for keyword in keywords:
+            if len(collected) >= max_items:
+                break
+            page_no = start_page_int
+            pages_this_kw = 0
+            while len(collected) < max_items and pages_this_kw < keyword_max_pages:
+                params = dict(common_params)
+                params["keyword"] = keyword
+                params["pageNo"] = str(page_no)
+                params["numOfRows"] = str(page_size_int)
+                items, total_count = _fetch_kto_list_page(
+                    keyword_endpoint, params, timeout_seconds, retry_count, base_retry_wait, rate_limit_wait
+                )
+                pages_this_kw += 1
+                if not items:
+                    break
+                for item in items:
+                    cid = str(item.get("contentid", "")).strip()
+                    ctype = str(item.get("contenttypeid", "") or item.get("contentTypeId", "")).strip()
+                    if ctype in KTO_DATA_PIPELINE_SKIP_CONTENTTYPE_IDS:
+                        continue
+                    if not cid or cid in seen_content_ids:
+                        continue
+                    seen_content_ids.add(cid)
+                    collected.append(item)
+                    if len(collected) >= max_items:
+                        break
+                if len(collected) >= max_items:
+                    break
+                last_page_full = len(items) >= page_size_int
+                if total_count > 0:
+                    pages_total = math.ceil(total_count / page_size_int)
+                    if pages_total <= 0 or page_no >= pages_total:
+                        break
+                    if last_page_full is False:
+                        break
+                elif not last_page_full:
+                    break
+                page_no += 1
+                if request_interval > 0:
+                    time.sleep(request_interval)
+
+            if len(collected) >= max_items:
+                break
             if request_interval > 0:
                 time.sleep(request_interval)
 
     detail_map: dict[str, dict] = {}
     intro_map: dict[str, dict] = {}
+    logger.info("[KTO] collected list places (unique cid)=%d detail_max=%d", len(collected), detail_max)
     for item in collected[:detail_max]:
         content_id = str(item.get("contentid", "")).strip()
         content_type_id = str(item.get("contenttypeid", "")).strip()
