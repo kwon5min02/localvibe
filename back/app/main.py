@@ -14,6 +14,7 @@ from app.api import (
     regions_router,
     search_router,
     visual_router,
+    scraps_trips_router
 )
 from app.repositories.db import mysql_url_configured
 
@@ -62,6 +63,8 @@ def create_app() -> FastAPI:
     api_app.include_router(chat_router)
     api_app.include_router(auth_router)
     api_app.include_router(visual_router)
+    api_app.include_router(scraps_trips_router)
+
     return api_app
 
 

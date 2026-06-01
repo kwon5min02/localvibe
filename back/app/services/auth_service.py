@@ -88,3 +88,66 @@ def build_access_token(*, google_sub: str, email: str, name: str, picture: str) 
         "exp": expires_at,
     }
     return jwt.encode(payload, secret, algorithm=algorithm)
+
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+_bearer = HTTPBearer(auto_error=False)
+
+
+def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> int:
+    """
+    JWT Bearer 토큰에서 user_id 추출.
+    로그인 필요 API에 Depends로 사용.
+
+    토큰이 없거나 유효하지 않으면 401 반환.
+    """
+    if not credentials or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="로그인이 필요합니다.",
+        )
+    token = credentials.credentials
+    try:
+        payload = decode_access_token(token)  # 기존 auth_service의 함수 사용
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise ValueError("user_id 없음")
+        return int(user_id)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="유효하지 않은 토큰입니다.",
+        )
+
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+_bearer = HTTPBearer(auto_error=False)
+
+
+def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> int:
+    if not credentials or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="로그인이 필요합니다.",
+        )
+    token = credentials.credentials
+    secret = os.getenv("JWT_SECRET", "").strip()
+    algorithm = os.getenv("JWT_ALGORITHM", "HS256").strip() or "HS256"
+    try:
+        payload = jwt.decode(token, secret, algorithms=[algorithm])
+        user_id = payload.get("user_id")
+        if not user_id:
+            raise ValueError("user_id 없음")
+        return int(user_id)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="유효하지 않은 토큰입니다.",
+        )
