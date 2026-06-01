@@ -3121,6 +3121,11 @@ body { margin: 0; background: var(--gray-50); }
    ============================================= */
 
 /* 사이드바 내부 스크롤 영역 */
+.sidebar-spacer {
+  flex-shrink: 0;
+  height: 130px;
+}
+
 .sidebar-scroll-area {
   flex: 1;
   overflow-y: auto;

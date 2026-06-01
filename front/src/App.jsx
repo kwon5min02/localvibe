@@ -574,6 +574,7 @@ export default function App() {
           }}
         >
           {/* 메뉴 */}
+          <div className="sidebar-spacer" />
           <div className="sidebar-scroll-area">
             <div className="sidebar-section-title">메인</div>
             <button className="sidebar-link" type="button" onClick={() => navigate('/')}>🏠 시작</button>
@@ -623,49 +624,15 @@ export default function App() {
             ))}
 
             <div className="sidebar-section-title" style={{ marginTop: 14 }}>정보</div>
-            <div className="sidebar-static-link">💡 서비스 소개</div>
+            <button className="sidebar-link" onClick={() => navigate('/')}>서비스 소개</button>
             <div className="sidebar-static-link">📬 문의하기</div>
           </div>
 
-          {/* ── 하단 계정 영역 ── */}
-          <div className="sidebar-account-area" ref={accountAreaRef} style={{ position: 'relative' }}>
-            {/* 팝업 — 위로 열림 */}
-            {accountPopupOpen && currentUser && (
-              <div className="sidebar-account-popup">
-                <div className="sidebar-account-popup-header">
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#111', marginBottom: 1 }}>{currentUser.name || '사용자'}</div>
-                  <div className="sidebar-account-popup-email">{currentUser.email}</div>
-                </div>
-                <button type="button" className="sidebar-account-popup-item" onClick={() => { setAccountPopupOpen(false); }}>
-                  <span style={{ fontSize: 14 }}>⚙️</span> 설정
-                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#bbb' }}>준비중</span>
-                </button>
-                <button type="button" className="sidebar-account-popup-item" onClick={() => { setAccountPopupOpen(false); }}>
-                  <span style={{ fontSize: 14 }}>🌐</span> 언어
-                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#bbb' }}>준비중</span>
-                </button>
-                <button type="button" className="sidebar-account-popup-item" onClick={() => { setAccountPopupOpen(false); }}>
-                  <span style={{ fontSize: 14 }}>❓</span> 도움 받기
-                  <span style={{ marginLeft: 'auto', fontSize: 10, color: '#bbb' }}>준비중</span>
-                </button>
-                <div className="sidebar-account-popup-divider" />
-                <button type="button" className="sidebar-account-popup-item danger" onClick={handleLogout}>
-                  <span style={{ fontSize: 14 }}>🚪</span> 로그아웃
-                </button>
-              </div>
-            )}
-
-            <SidebarAccount
-              currentUser={currentUser}
-              onAccountClick={() => setAccountPopupOpen(o => !o)}
-              onLoginClick={() => navigate('/login')}
-            />
-          </div>
         </aside>
 
-        {sidebarOpen && (
+        {/* {sidebarOpen && (
           <div className="app-sidebar-resizer" role="separator" aria-orientation="vertical" tabIndex={0} onPointerDown={handleSidebarResizePointerDown} />
-        )}
+        )} */}
 
         {/* ── 메인 ── */}
         <main className="app-shell">
