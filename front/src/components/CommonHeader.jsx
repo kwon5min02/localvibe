@@ -10,6 +10,7 @@ export default function CommonHeader({ onTabChange }) {
     try { const raw = localStorage.getItem("lv_user"); return raw ? JSON.parse(raw) : null; } catch { return null; }
   });
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const loginRef = useRef(null);
 
   useEffect(() => {
@@ -22,11 +23,16 @@ export default function CommonHeader({ onTabChange }) {
   }, []);
 
   useEffect(() => {
-    if (!isLoginOpen) return;
-    const handler = (e) => { if (loginRef.current && !loginRef.current.contains(e.target)) setIsLoginOpen(false); };
+    if (!isLoginOpen && !isProfileOpen) return;
+    const handler = (e) => {
+      if (loginRef.current && !loginRef.current.contains(e.target)) {
+        setIsLoginOpen(false);
+        setIsProfileOpen(false);
+      }
+    };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [isLoginOpen]);
+  }, [isLoginOpen, isProfileOpen]);
 
   const handleGoogleCredential = async (credential) => {
     try {
@@ -55,36 +61,47 @@ export default function CommonHeader({ onTabChange }) {
 
   return (
     <div className="common-header-wrap">
-      <div className="common-header-inner">
+      <div className="common-header-pill">
         {/* 로고 */}
-        <h1 className="common-header-logo" onClick={() => navigate("/")}>LocalVibe</h1>
+        <button type="button" className="common-header-logo" onClick={() => navigate("/")}>
+          <span className="common-header-logo-icon">🥒</span>
+          <span className="common-header-logo-text">LocalVibe</span>
+        </button>
+
+        {/* 구분선 */}
+        <div className="common-header-divider" />
 
         {/* 중앙 네비 */}
         <nav className="common-header-nav">
-          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('gallery') : navigate('/main')}>갤러리</span>
-          <span
-            className="common-header-nav-link"
-            onClick={() => {
-              if (onTabChange) onTabChange('planner');
-              else navigate('/main', { state: { tab: 'planner' } });
-            }}
-          >
-            플래너
-          </span>
-          <span className="common-header-nav-link" onClick={() => navigate('/')}>소개</span>
+          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('gallery') : navigate('/main', { state: { tab: 'gallery' } })}>갤러리</span>
+          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('planner') : navigate('/main', { state: { tab: 'planner' } })}>플래너</span>
+          <span className="common-header-nav-link" onClick={() => onTabChange ? onTabChange('mypage') : navigate('/main', { state: { tab: 'mypage' } })}>마이페이지</span>
         </nav>
+
+        {/* 구분선 */}
+        <div className="common-header-divider" />
 
         {/* 우측 */}
         <div className="common-header-right" ref={loginRef}>
           {user ? (
-            <>
-              {user.picture
-                ? <img src={user.picture} alt="profile" className="common-header-avatar" />
-                : <div className="common-header-avatar-fallback">{String(user.name || "U").slice(0, 1).toUpperCase()}</div>
-              }
-              <span className="common-header-user-name">{user.name || user.email}</span>
-              <button className="common-header-btn" onClick={handleLogout}>로그아웃</button>
-            </>
+            <div className="common-header-profile-wrap" ref={loginRef}>
+              <button
+                type="button"
+                className="common-header-profile-trigger"
+                onClick={() => setIsProfileOpen(o => !o)}
+              >
+                {user.picture
+                  ? <img src={user.picture} alt="profile" className="common-header-avatar" />
+                  : <div className="common-header-avatar-fallback">{String(user.name || "U").slice(0, 1).toUpperCase()}</div>
+                }
+                <span className="common-header-user-name">{user.name || user.email}</span>
+              </button>
+              {isProfileOpen && (
+                <div className="common-header-profile-dropdown">
+                  <button className="common-header-profile-logout" onClick={handleLogout}>로그아웃</button>
+                </div>
+              )}
+            </div>
           ) : (
             <>
               <button className="common-header-btn" onClick={() => setIsLoginOpen(true)}>로그인</button>
