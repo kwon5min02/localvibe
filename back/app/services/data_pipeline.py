@@ -64,13 +64,16 @@ def _infer_province_from_address(address: str) -> str | None:
         "강원도",
         "충청북도",
         "충청남도",
+        "전북특별자치도",
         "전라북도",
         "전라남도",
         "경상북도",
         "경상남도",
     ):
-        if addr.startswith(token) or token in addr[:12]:
-            return token.replace("특별자치도", "도").replace("특별시", "").replace("광역시", "")[:4]
+        if addr.startswith(token) or token in addr[:20]:
+            from app.utils.province_names import canonical_province_from_address_token
+
+            return canonical_province_from_address_token(token)
     m = re.match(r"^([가-힣]+도|[가-힣]+시)", addr)
     if m:
         return m.group(1)
@@ -99,6 +102,10 @@ def clean_place(raw: dict[str, Any]) -> dict[str, Any] | None:
 
     if not province and address:
         province = _infer_province_from_address(address)
+    if province:
+        from app.utils.province_names import canonical_province
+
+        province = canonical_province(province) or province
 
     content_id = str(raw.get("sourceId", "")).strip() or None
     description = str(raw.get("summary", "")).strip() or None
@@ -120,7 +127,11 @@ def clean_place(raw: dict[str, Any]) -> dict[str, Any] | None:
     lat_f = float(lat) if lat is not None and str(lat).strip() != "" else None
     lng_f = float(lng) if lng is not None and str(lng).strip() != "" else None
 
-    kto_img = places_store._normalize_https_image_url(raw.get("imageUrl"))
+    from app.services.media_utils import sanitize_display_image_url
+
+    kto_img = sanitize_display_image_url(
+        places_store._normalize_https_image_url(raw.get("imageUrl"))
+    )
 
     return {
         "content_id": content_id,

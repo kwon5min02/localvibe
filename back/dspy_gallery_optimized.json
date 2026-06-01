@@ -1,0 +1,138 @@
+{
+  "analyze_intent.predict": {
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "user_query": "혼행하기 좋은 곳",
+        "place_list": "",
+        "recommended_ids": "210,10872,11533,12112,7735,883,829,1970,813",
+        "answer": "혼자 여유롭게 즐길 수 있는 카페와 전시, 문화 공간을 골랐어요."
+      },
+      {
+        "user_query": "분좋카 어디 없어?",
+        "place_list": "",
+        "recommended_ids": "210,10872,11533,883,6299,829,813,1970,10101",
+        "answer": "분위기 좋고 감성적인 카페들을 중심으로 골랐어요."
+      },
+      {
+        "user_query": "연인이랑 분위기 좋은 데 가고 싶어",
+        "place_list": "",
+        "recommended_ids": "210,10872,11533,883,829,813,1970,6299,10101",
+        "answer": "연인과 함께 분위기 좋은 카페와 아름다운 자연 명소를 중심으로 골랐어요."
+      },
+      {
+        "user_query": "데이트하기 좋은 감성 카페 추천",
+        "place_list": "",
+        "recommended_ids": "210,10872,11533,883,829,1970,813,6299,10101",
+        "answer": "데이트하기 좋은 감성 카페와 산책하기 좋은 공원을 함께 골랐어요."
+      }
+    ],
+    "signature": {
+      "instructions": "You are an intelligent assistant designed to understand user queries regarding gallery or cafe searches. Analyze the provided user query to extract the user's intent by identifying key aspects such as the relationship type (couple, family, friends, etc.), desired mood (calm, trendy, etc.), mode of transport (public transportation, car, etc.), and the region they are interested in. Provide a clear reasoning for your findings along with the identified relation, mood, transport, and region details.",
+      "fields": [
+        {
+          "prefix": "User Query:",
+          "description": "사용자의 자연어 갤러리 검색 질문"
+        },
+        {
+          "prefix": "Reasoning:",
+          "description": "${reasoning}"
+        },
+        {
+          "prefix": "Relation:",
+          "description": "동행 관계: couple/family/friends/formal/solo/unknown"
+        },
+        {
+          "prefix": "Mood:",
+          "description": "분위기: calm/trendy/local/nature/night/food/culture/unknown"
+        },
+        {
+          "prefix": "Transport:",
+          "description": "이동 수단: public/car/unknown"
+        },
+        {
+          "prefix": "Region:",
+          "description": "언급된 지역명 (없으면 unknown)"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "recommend.predict": {
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "user_query": "혼행하기 좋은 곳",
+        "place_list": "",
+        "intent_summary": "동행관계=solo, 원하는분위기=unknown, 이동수단=unknown, 희망지역=unknown",
+        "reasoning": "혼자서 편안하게 시간을 보낼 수 있는 장소를 추천하기 위해, 조용하고 아늑한 분위기의 카페와 혼자서도 즐길 수 있는 명소를 중심으로 선택했습니다.",
+        "answer": "혼자서 편안하게 시간을 보낼 수 있는 아늑한 카페와 조용한 명소를 추천해 드려요.",
+        "recommended_ids": "210,883,11533,6299,1970,813,829,10872,10101"
+      },
+      {
+        "augmented": true,
+        "user_query": "연인이랑 분위기 좋은 데 가고 싶어",
+        "place_list": "",
+        "intent_summary": "동행관계=couple, 원하는분위기=calm, 이동수단=unknown, 희망지역=unknown",
+        "reasoning": "연인과 함께할 수 있는 분위기 좋은 장소를 추천하기 위해, 조용하고 아늑한 카페와 로맨틱한 레스토랑을 중심으로 선정했습니다. 이러한 장소들은 편안한 대화를 나누기 좋고, 특별한 순간을 만들기에 적합합니다.",
+        "answer": "연인과 함께 특별한 시간을 보낼 수 있는 아늑한 카페와 로맨틱한 레스토랑을 추천해요. 분위기가 좋고 편안한 곳에서 소중한 추억을 만들어보세요!",
+        "recommended_ids": "210, 10872, 11533, 883, 6299, 829, 813, 1970, 10101"
+      },
+      {
+        "augmented": true,
+        "user_query": "데이트하기 좋은 감성 카페 추천",
+        "place_list": "",
+        "intent_summary": "동행관계=couple, 원하는분위기=calm, 이동수단=unknown, 희망지역=unknown",
+        "reasoning": "사용자가 데이트를 위해 감성적인 카페를 찾고 있다는 점을 고려하여, 아늑하고 분위기 좋은 카페들을 추천합니다. 이러한 장소들은 연인과의 대화와 시간을 보내기에 적합합니다.",
+        "answer": "데이트에 적합한 감성 카페들을 추천해드릴게요. 아늑한 분위기에서 특별한 시간을 보내세요!",
+        "recommended_ids": "210, 10872, 11533, 883, 6299, 829, 813, 1970, 10101"
+      },
+      {
+        "user_query": "분좋카 어디 없어?",
+        "place_list": "",
+        "recommended_ids": "210,10872,11533,883,6299,829,813,1970,10101",
+        "answer": "분위기 좋고 감성적인 카페들을 중심으로 골랐어요."
+      }
+    ],
+    "signature": {
+      "instructions": "You are a café and gallery recommendation expert. Given a user's natural language query regarding suitable locations for social interactions, analyze the intent to identify their desired atmosphere, relationship type, preferred transportation, and region. Based on this analysis, generate personalized recommendations, providing reasoning for each suggestion, a tailored answer for the user, and a list of recommended place IDs. Ensure the recommendations align with the user's preferences for a memorable experience.",
+      "fields": [
+        {
+          "prefix": "User Query:",
+          "description": "사용자의 원본 검색 질문"
+        },
+        {
+          "prefix": "Place List:",
+          "description": "장소 데이터 목록 (id, 이름, 지역, 유형, 요약)"
+        },
+        {
+          "prefix": "Intent Summary:",
+          "description": "분석된 사용자 의도 요약"
+        },
+        {
+          "prefix": "Reasoning:",
+          "description": "${reasoning}"
+        },
+        {
+          "prefix": "Answer:",
+          "description": "사용자에게 보여줄 추천 이유"
+        },
+        {
+          "prefix": "Recommended Ids:",
+          "description": "추천 장소 id 9개, 쉼표 구분. place_list에 있는 id만 사용. 예: 1,2,3,4,5,6,7,8,9"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.12",
+      "dspy": "3.2.1",
+      "cloudpickle": "3.1"
+    }
+  }
+}

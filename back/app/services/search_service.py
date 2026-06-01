@@ -10,6 +10,12 @@ from app.repositories import places_store, trends_store
 from app.repositories.db import mysql_url_configured, session_scope
 from app.repositories.places_store import Place
 from app.services import embedding_service
+from app.services.trip_themes import (
+    detect_trip_theme_profile,
+    place_matches_must_visit,
+    place_matches_theme,
+    theme_deprioritize_row,
+)
 
 # 긴 지명을 먼저 두어 '여수시'만 잡고 '여수'는 중복 제거하기 쉽게 합니다.
 _LOCALITY_TOKENS: tuple[str, ...] = (
@@ -23,6 +29,7 @@ _LOCALITY_TOKENS: tuple[str, ...] = (
     "세종특별자치시",
     "제주특별자치도",
     "전라남도",
+    "전북특별자치도",
     "전라북도",
     "경상남도",
     "경상북도",
@@ -183,6 +190,7 @@ def search_gallery(query: str, region_filter: str | None) -> list[dict[str, Any]
     top_k = int(os.getenv("GALLERY_SEARCH_TOP_K", "20"))
     scored = embedding_service.search_with_scores(query, region_filter, top_k)
     hints = _locality_hints_from_query(query)
+    theme_profile = detect_trip_theme_profile(query)
 
     merged: dict[int, float] = {pid: float(sim) for pid, sim in scored}
     if hints and not region_filter:
@@ -203,6 +211,9 @@ def search_gallery(query: str, region_filter: str | None) -> list[dict[str, Any]
             p = places_store.get_place_by_id(session, place_id)
             if not p:
                 continue
+            if os.getenv("GALLERY_REQUIRE_REAL_IMAGE", "1").strip() != "0":
+                if not places_store.place_has_real_display_image(session, place_id):
+                    continue
             trend = _calc_trend_score(session, place_id)
             rec = _calc_recency_score(p.created_at)
             loc = _calc_location_score(p.region, p.province, region_filter)
@@ -210,6 +221,25 @@ def search_gallery(query: str, region_filter: str | None) -> list[dict[str, Any]
             final = _calc_final_score(sim_n, trend, rec, loc)
             if hints and not region_filter and _place_matches_locality_hints(p, hints):
                 final += locality_boost
+            if theme_profile.active:
+                row_stub = {
+                    "name": p.name,
+                    "summary": p.description,
+                    "category": p.category,
+                    "insight_json": p.insight_json,
+                    "recommendedBusinesses": [],
+                }
+                if any(
+                    place_matches_must_visit(row_stub, phrase)
+                    for phrase in theme_profile.must_visit
+                ):
+                    final += float(os.getenv("GALLERY_MUST_VISIT_SCORE_BOOST", "0.52"))
+                for theme in theme_profile.themes:
+                    if place_matches_theme(row_stub, theme):
+                        final += float(os.getenv("GALLERY_THEME_SCORE_BOOST", "0.34"))
+                        break
+                if theme_deprioritize_row(row_stub, theme_profile):
+                    final -= float(os.getenv("GALLERY_THEME_DEPRIORITIZE_PENALTY", "0.24"))
             out.append(
                 {
                     "place_id": place_id,

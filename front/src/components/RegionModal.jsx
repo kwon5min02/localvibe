@@ -1,6 +1,8 @@
 import { useState, useRef } from "react";
 import KakaoMap from "./KakaoMap";
 import { resolveBackendMediaUrl } from "../utils/apiMediaUrl";
+import { CARD_PLACEHOLDER_SVG } from "../utils/placeholderImage";
+import { buildArticleDisplayData } from "../utils/articleBlocks";
 
 /* ── 인사이트 정규화 ── */
 function normalizeInsightValues(values = []) {
@@ -28,61 +30,6 @@ function toCardItems(region) {
     const cleaned = normalizeInsightValues(card.values);
     return { ...card, values: cleaned.length > 0 ? cleaned.slice(0, 4) : buildFallbackValues(card.title, region) };
   });
-}
-
-/* ── 하드코딩 아티클 (백엔드 연동 전) ── */
-function generateArticle(region) {
-  const name = region?.name || "이 장소";
-  const regionName = region?.region || region?.province || "이 지역";
-  const summary = region?.summary || "";
-  return {
-    title: `${name}, 로컬이 사랑하는 이유`,
-    author: "LocalVibe 에디터",
-    date: new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" }),
-    body: [
-      {
-        type: "lead",
-        text: `${regionName}에서 진짜 로컬을 만나고 싶다면, 관광지도를 잠시 접어두자. ${name}은 그런 곳이다. 화려한 간판도, SNS 인증샷 명소도 아니지만, 한 번 발걸음을 들인 사람은 꼭 다시 찾게 되는 장소.`,
-      },
-      {
-        type: "subheader",
-        text: "지역이 품은 이야기",
-      },
-      {
-        type: "paragraph",
-        text: `${regionName}은 최근 몇 년 사이 조용한 변화를 겪고 있다. 젊은 로컬 창업자들이 하나둘 골목에 둥지를 틀기 시작했고, 오래된 가게들 사이에 새로운 공간이 들어서며 독특한 레이어가 생겨났다. ${name}도 그 흐름 속에서 탄생한 공간이다.`,
-      },
-      {
-        type: "paragraph",
-        text: summary || `처음에는 동네 주민들의 단골 장소로 알려졌다. 특별한 마케팅도 없었고, 리뷰를 부탁하는 일도 없었다. 그저 꾸준하게, 자기만의 방식으로 자리를 지켰다. 입소문은 자연스럽게 퍼졌고, 이제는 이 지역을 여행하는 사람들이 꼭 한 번 들르는 곳이 됐다.`,
-      },
-      {
-        type: "subheader",
-        text: "공간이 주는 감각",
-      },
-      {
-        type: "paragraph",
-        text: `${name}에 들어서면 어딘가 서두르지 않아도 된다는 느낌이 든다. 공간은 사람을 밀어내지 않는다. 창밖으로 보이는 ${regionName}의 골목, 테이블 위의 작은 소품들, 잔잔하게 깔린 음악까지 — 모든 것이 그 자리에 있어야 할 이유를 갖고 있다.`,
-      },
-      {
-        type: "quote",
-        text: `"처음 왔을 때 그냥 지나칠 뻔했어요. 간판이 너무 작아서요. 근데 이제는 ${regionName} 오면 꼭 들르는 곳이 됐어요."`,
-        attribution: "— 방문객 후기",
-      },
-      {
-        type: "subheader",
-        text: "방문 전 알아두면 좋은 것",
-      },
-      {
-        type: "paragraph",
-        text: `주말 오후는 사람이 몰린다. 여유롭게 즐기고 싶다면 평일 오전이나 저녁 시간대를 노리는 게 좋다. 대중교통 접근성도 나쁘지 않지만, 걸어서 주변 골목을 함께 둘러보는 걸 추천한다. ${regionName}의 진짜 매력은 지도 바깥에 있으니까.`,
-      },
-      {
-        type: "paragraph",
-        text: `처음 방문이라면 이 공간이 제안하는 방식 그대로 따라가 보자. 두 번째 방문부터는 자기만의 루틴이 생긴다. 그게 로컬 스팟의 진짜 매력이다.`,
-      },
-    ],
-  };
 }
 
 /* ── 이미지 캐러셀 ── */
@@ -203,8 +150,6 @@ function ArticleBody({ blocks }) {
 }
 
 /* ── 메인 모달 ── */
-const FALLBACK_IMG = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=900&q=80";
-
 export default function RegionModal({
   region, isLoading, onClose, apiBaseUrl = "",
   crawlImageUrls = [], article = null, articleLoading = false,
@@ -221,17 +166,7 @@ export default function RegionModal({
     ...crawlImageUrls.map(u => resolveBackendMediaUrl(u, apiBaseUrl)),
   ].filter(Boolean);
 
-  // 아티클: 백엔드 연동 전엔 하드코딩
-  // 백엔드 아티클이 실제 내용 있을 때만 사용, 에러/빈값이면 하드코딩 폴백
-  const hasRealArticle = article &&
-    (article.title || article.content) &&
-    !String(article.content || "").includes("오류") &&
-    !String(article.content || "").includes("불러오지 못") &&
-    String(article.content || "").length > 30;
-
-  const articleData = hasRealArticle
-    ? { title: article.title || generateArticle(region).title, author: "LocalVibe AI", date: "", body: [{ type: "paragraph", text: article.content }] }
-    : generateArticle(region);
+  const articleData = buildArticleDisplayData(article, region);
 
   return (
     <div
@@ -275,7 +210,7 @@ export default function RegionModal({
         </div>
 
         {/* ── 이미지 캐러셀 ── */}
-        <ImageCarousel images={allImages} fallback={FALLBACK_IMG} />
+        <ImageCarousel images={allImages} fallback={CARD_PLACEHOLDER_SVG} />
 
         {/* ── 아티클 본문 ── */}
         <div style={{ padding: "24px 24px 0" }}>

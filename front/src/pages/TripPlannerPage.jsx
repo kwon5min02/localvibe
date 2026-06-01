@@ -1,40 +1,53 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import RoadMap from '../components/RoadMap';
 import TripChatPanel from '../components/TripChatPanel';
+import TripPlaceSearch from '../components/TripPlaceSearch';
+import TripSelectModal from '../components/TripSelectModal';
 import RegionModal from '../components/RegionModal';
-import ExportButton from '../components/ExportButton';
 import { normalizeRegionMediaFields, resolveBackendMediaUrl } from '../utils/apiMediaUrl';
+import { createTrip, replaceTripPlaces } from '../utils/tripsApi';
+import {
+  applyScheduleToRegions,
+  recomputeScheduleForOrderedLocations,
+  TRIP_ITEMS_PER_DAY_DEFAULT,
+} from '../utils/tripSchedule';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
-/**
- * TripPlannerPage Component
- * Split-screen layout: Left (RoadMap with locations), Right (TripChatPanel)
- * Shows a dynamic travel itinerary built through AI recommendations
- */
-export default function TripPlannerPage({ regions = [] }) {
-  // Roadmap locations (user's selected trip itinerary)
-  const [roadmapLocations, setRoadmapLocations] = useState([]);
-  const chatResetRef = useRef(null);
+const EMPTY_REGION_MAP = new Map();
 
-  // Selected region for detail modal
+function TripPlannerPage({
+  regionMap,
+  scrappedIds = [],
+  onToggleScrap,
+  currentUser = null,
+  myTrips = [],
+  onMyTripsChange,
+  onRequireLogin,
+}) {
+  const map = regionMap instanceof Map ? regionMap : EMPTY_REGION_MAP;
+  const lookupRegion = id => map.get(Number(id));
+  const [roadmapLocations, setRoadmapLocations] = useState([]);
+  const [tripDuration, setTripDuration] = useState(null);
+  const chatResetRef = useRef(null);
+  const [saveModalOpen, setSaveModalOpen] = useState(false);
+
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [insightLocation, setInsightLocation] = useState(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
   const [modalCrawlImages, setModalCrawlImages] = useState([]);
   const [modalArticle, setModalArticle] = useState(null);
   const [modalArticleLoading, setModalArticleLoading] = useState(false);
-  const [scrappedIds, setScrappedIds] = useState(() => {
-    try { const p = JSON.parse(localStorage.getItem('lv_scraps') || '[]'); return Array.isArray(p) ? p : []; } catch { return []; }
-  });
 
-  // Create a map of region ID -> full region data for quick lookup
-  const regionMap = useMemo(() => {
-    return new Map(regions.map(region => [region.id, region]));
-  }, [regions]);
+  const itemsPerDay =
+    tripDuration?.itemsPerDay ?? TRIP_ITEMS_PER_DAY_DEFAULT;
+  const maxLocations =
+    tripDuration?.maxLocations ??
+    (tripDuration?.days
+      ? tripDuration.days * itemsPerDay
+      : null);
 
-  /** 모달: 인사이트가 좌표를 비우는 경우에도 로드맵에 있던 주소·좌표 유지 */
   const modalRegion = useMemo(() => {
     if (!selectedLocation) {
       return null;
@@ -55,16 +68,13 @@ export default function TripPlannerPage({ regions = [] }) {
     };
   }, [selectedLocation, insightLocation]);
 
-  // Fetch detailed insight for selected location
   useEffect(() => {
     let isMounted = true;
-
     async function fetchLocationInsight() {
       if (!selectedLocation?.id) {
         setInsightLocation(null);
         return;
       }
-
       setIsInsightLoading(true);
       try {
         const response = await fetch(
@@ -73,7 +83,6 @@ export default function TripPlannerPage({ regions = [] }) {
         if (!response.ok) {
           return;
         }
-
         const data = await response.json();
         if (isMounted && data?.region) {
           setInsightLocation(normalizeRegionMediaFields({ ...data.region }));
@@ -86,211 +95,357 @@ export default function TripPlannerPage({ regions = [] }) {
         }
       }
     }
-
     fetchLocationInsight();
-
     return () => {
       isMounted = false;
     };
   }, [selectedLocation]);
 
-  // 크롤 이미지 & 아티클 fetch
   useEffect(() => {
     const id = selectedLocation?.id;
-    if (!id) { setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(false); return; }
+    if (!id) {
+      setModalCrawlImages([]);
+      setModalArticle(null);
+      setModalArticleLoading(false);
+      return;
+    }
     let cancelled = false;
-    setModalCrawlImages([]); setModalArticle(null); setModalArticleLoading(true);
+    setModalCrawlImages([]);
+    setModalArticle(null);
+    setModalArticleLoading(true);
     (async () => {
       try {
-        await fetch(`${API_BASE_URL}/api/places/${id}/crawl`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        if (cancelled) return;
         const imgRes = await fetch(`${API_BASE_URL}/api/places/${id}/images`);
-        if (imgRes.ok && !cancelled) { const d = await imgRes.json(); setModalCrawlImages((d.images || []).map(x => x.url).filter(Boolean).map(u => resolveBackendMediaUrl(u))); }
-        if (cancelled) return;
+        if (imgRes.ok && !cancelled) {
+          const d = await imgRes.json();
+          setModalCrawlImages(
+            (d.images || [])
+              .map(x => x.url)
+              .filter(Boolean)
+              .map(u => resolveBackendMediaUrl(u)),
+          );
+        }
+        if (cancelled) {
+          return;
+        }
         const artRes = await fetch(`${API_BASE_URL}/api/places/${id}/article`);
-        if (cancelled) return;
-        if (artRes.ok) { const a = await artRes.json(); if (!cancelled) setModalArticle({ title: a.title || '', content: a.content || '' }); }
-        else if (!cancelled) setModalArticle(null);
-      } catch { if (!cancelled) setModalArticle(null); }
-      finally { if (!cancelled) setModalArticleLoading(false); }
+        if (cancelled) {
+          return;
+        }
+        if (artRes.ok) {
+          const a = await artRes.json();
+          if (!cancelled) {
+            setModalArticle({
+              title: a.title || '',
+              content: a.content || '',
+              blocks: Array.isArray(a.blocks) ? a.blocks : [],
+            });
+          }
+        } else if (!cancelled) {
+          setModalArticle(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setModalArticle(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setModalArticleLoading(false);
+        }
+      }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [selectedLocation?.id]);
 
-  const handleToggleScrap = (regionId) => {
-    setScrappedIds(prev => {
-      const next = prev.includes(regionId) ? prev.filter(id => id !== regionId) : [...prev, regionId];
-      localStorage.setItem('lv_scraps', JSON.stringify(next));
-      return next;
-    });
-  };
-
-  /**
-   * Handle location replacement in roadmap
-   * Replaces old location with new one at the same position
-   */
-  const handleReplaceLocation = (oldLocationId, newLocationId) => {
-    const newRegion = regionMap.get(Number(newLocationId));
+  const handleReplaceLocation = (oldLocationId, newLocationId, schedule = null) => {
+    const newRegion = lookupRegion(newLocationId);
     if (!newRegion) {
       return;
     }
-
-    setRoadmapLocations(prev =>
-      prev.map(loc => (loc.id === oldLocationId ? newRegion : loc)),
-    );
+    setRoadmapLocations(prev => {
+      const next = prev.map(loc =>
+        loc.id === oldLocationId ? newRegion : loc,
+      );
+      const days =
+        tripDuration?.days ?? Math.max(1, Math.ceil(next.length / itemsPerDay));
+      if (schedule?.length) {
+        return applyScheduleToRegions(next, schedule);
+      }
+      return recomputeScheduleForOrderedLocations(next, days, itemsPerDay);
+    });
   };
 
-  const resolveRegionName = regionId => {
-    const region = regionMap.get(Number(regionId));
-    return region?.name || null;
-  };
-
-  /**
-   * Handle AI recommendations from Trip Chat
-   * Merges new recommended regions into roadmap locations
-   */
   const handleTripLocationsChange = (recommendedIds, options = {}) => {
     if (!Array.isArray(recommendedIds) || recommendedIds.length === 0) {
       return;
     }
-
-    const maxLocations = Number.isFinite(options?.maxLocations)
+    const cap = Number.isFinite(options?.maxLocations)
       ? Number(options.maxLocations)
       : null;
-    const requestedAddCount = Number.isFinite(options?.requestedAddCount)
-      ? Number(options.requestedAddCount)
-      : null;
-
-    // Get full region objects from recommendedIds
     const newRegions = recommendedIds
-      .map(id => regionMap.get(Number(id)))
+      .map(id => lookupRegion(id))
       .filter(region => region !== undefined);
-
     if (newRegions.length === 0) {
       return;
     }
 
     setRoadmapLocations(prev => {
       const existingIds = new Set(prev.map(loc => loc.id));
-      const uniqueNewRegions = newRegions.filter(
-        region => !existingIds.has(region.id),
-      );
-
-      if (uniqueNewRegions.length === 0) {
+      const uniqueNew = newRegions.filter(r => !existingIds.has(r.id));
+      const remaining = Number.isFinite(cap)
+        ? Math.max(0, cap - prev.length)
+        : uniqueNew.length;
+      if (remaining <= 0) {
         return prev;
       }
-
-      const remainingSlots = Number.isFinite(maxLocations)
-        ? Math.max(0, maxLocations - prev.length)
-        : uniqueNewRegions.length;
-      if (remainingSlots <= 0) {
-        return prev;
+      const merged = [...prev, ...uniqueNew.slice(0, remaining)];
+      let withSchedule = applyScheduleToRegions(merged, options.schedule);
+      if (!options.schedule?.length && tripDuration?.days) {
+        withSchedule = recomputeScheduleForOrderedLocations(
+          withSchedule,
+          tripDuration.days,
+          itemsPerDay,
+        );
       }
-
-      // 추가하려던 개수 만큼만 가져오기
-      // (이미 존재하는 것들이 필터링되었으므로)
-      const addCount = Math.min(uniqueNewRegions.length, remainingSlots);
-      if (addCount <= 0) {
-        return prev;
-      }
-
-      return [...prev, ...uniqueNewRegions.slice(0, addCount)];
+      return withSchedule;
     });
   };
 
-  /**
-   * 전체 재계획(replan): 추천 id 순서대로 로드맵을 통째로 교체
-   */
-  const handleTripLocationsReplaceAll = recommendedIds => {
+  const handleTripLocationsReplaceAll = (recommendedIds, schedule = null) => {
     if (!Array.isArray(recommendedIds) || recommendedIds.length === 0) {
       return;
     }
     const next = recommendedIds
-      .map(id => regionMap.get(Number(id)))
+      .map(id => lookupRegion(id))
       .filter(region => region !== undefined);
     if (next.length === 0) {
       return;
     }
-    setRoadmapLocations(next);
+    let withSchedule = applyScheduleToRegions(next, schedule);
+    if (!schedule?.length && tripDuration?.days) {
+      withSchedule = recomputeScheduleForOrderedLocations(
+        withSchedule,
+        tripDuration.days,
+        itemsPerDay,
+      );
+    }
+    setRoadmapLocations(withSchedule);
   };
 
-  /**
-   * Remove a location from the roadmap
-   */
+  const handleAddPlaceToRoadmap = region => {
+    if (!region?.id) {
+      return;
+    }
+    if (
+      Number.isFinite(maxLocations) &&
+      roadmapLocations.length >= maxLocations
+    ) {
+      window.alert('일정이 가득 찼어요. 기간을 늘리거나 장소를 삭제해 주세요.');
+      return;
+    }
+    handleTripLocationsChange([region.id], {
+      maxLocations,
+      schedule: null,
+    });
+  };
+
   const handleRemoveLocation = locationId => {
-    setRoadmapLocations(prev => prev.filter(loc => loc.id !== locationId));
+    setRoadmapLocations(prev => {
+      const next = prev.filter(loc => loc.id !== locationId);
+      const days =
+        tripDuration?.days ?? Math.max(1, Math.ceil(next.length / itemsPerDay));
+      return recomputeScheduleForOrderedLocations(next, days, itemsPerDay);
+    });
     if (selectedLocation?.id === locationId) {
       setSelectedLocation(null);
       setInsightLocation(null);
     }
   };
 
-  const handleMoveLocation = (fromIndex, toIndex) => {
-    setRoadmapLocations(prev => {
-      if (
-        !Number.isInteger(fromIndex) ||
-        !Number.isInteger(toIndex) ||
-        fromIndex < 0 ||
-        toIndex < 0 ||
-        fromIndex >= prev.length ||
-        fromIndex === toIndex
-      ) {
-        return prev;
-      }
-
-      const nextIndex = Math.max(0, Math.min(prev.length - 1, toIndex));
-      if (nextIndex === fromIndex) {
-        return prev;
-      }
-
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(nextIndex, 0, moved);
-      return next;
-    });
+  const handleItineraryChange = nextLocations => {
+    if (!Array.isArray(nextLocations)) {
+      return;
+    }
+    setRoadmapLocations(nextLocations);
   };
 
-  /**
-   * Clear entire roadmap
-   */
   const handleClearRoadmap = () => {
+    if (roadmapLocations.length === 0) {
+      return;
+    }
+    const ok = window.confirm(
+      '로드맵의 모든 장소와 채팅을 지울까요? 이 작업은 되돌릴 수 없습니다.',
+    );
+    if (!ok) {
+      return;
+    }
     setRoadmapLocations([]);
+    setTripDuration(null);
     setSelectedLocation(null);
     setInsightLocation(null);
     chatResetRef.current?.();
   };
 
+  const handleTripMetaChange = meta => {
+    if (meta?.duration) {
+      setTripDuration(meta.duration);
+    }
+  };
+
+  const roadmapPlaceIds = useMemo(
+    () => roadmapLocations.map(loc => loc.id).filter(id => Number.isFinite(Number(id))),
+    [roadmapLocations],
+  );
+
+  const mergeTripIntoMyTrips = (updatedTrip) => {
+    if (!updatedTrip) return;
+    onMyTripsChange?.(prev => {
+      const list = Array.isArray(prev) ? prev : myTrips;
+      const idx = list.findIndex(t => t.id === updatedTrip.id);
+      const normalized = {
+        ...updatedTrip,
+        places: (updatedTrip.places || []).map(p =>
+          normalizeRegionMediaFields({ ...p }),
+        ),
+      };
+      if (idx >= 0) {
+        const next = [...list];
+        next[idx] = normalized;
+        return next;
+      }
+      return [...list, normalized];
+    });
+  };
+
+  const handleSaveToExistingTrip = async tripId => {
+    if (!currentUser) {
+      onRequireLogin?.();
+      return;
+    }
+    if (roadmapLocations.length === 0) {
+      window.alert('저장할 장소가 없어요.');
+      return;
+    }
+    try {
+      const updated = await replaceTripPlaces(tripId, roadmapPlaceIds);
+      mergeTripIntoMyTrips(updated);
+      setSaveModalOpen(false);
+      window.alert('마이페이지 여행에 일정을 저장했어요.');
+    } catch (err) {
+      if (err?.message === 'not_logged_in') {
+        onRequireLogin?.();
+      } else {
+        window.alert('저장에 실패했습니다.');
+      }
+    }
+  };
+
+  const handleCreateTripAndSave = async () => {
+    if (!currentUser) {
+      onRequireLogin?.();
+      return;
+    }
+    if (roadmapLocations.length === 0) {
+      window.alert('저장할 장소가 없어요.');
+      return;
+    }
+    const label =
+      tripDuration?.days && tripDuration?.nights != null
+        ? `${tripDuration.nights}박 ${tripDuration.days}일 여행`
+        : `여행 ${new Date().toLocaleDateString('ko-KR')}`;
+    const tripName = window.prompt('새 여행 이름', label);
+    if (!tripName?.trim()) {
+      return;
+    }
+    try {
+      const created = await createTrip(tripName.trim());
+      const updated = await replaceTripPlaces(created.id, roadmapPlaceIds);
+      mergeTripIntoMyTrips(updated);
+      setSaveModalOpen(false);
+      window.alert(`"${tripName.trim()}"에 일정을 저장했어요.`);
+    } catch (err) {
+      if (err?.message === 'not_logged_in') {
+        onRequireLogin?.();
+      } else {
+        window.alert('여행 만들기에 실패했습니다.');
+      }
+    }
+  };
+
   return (
     <div className="trip-planner-page">
-      {/* Header section */}
       <div className="trip-planner-header">
-        <h2>My Trip Planner</h2>
+        <div>
+          <h2>여행 플래너</h2>
+        </div>
         <div className="trip-planner-stats">
-          <span>{roadmapLocations.length} locations</span>
-          {roadmapLocations.length > 0 && (
-            <button
-              className="trip-planner-clear-btn"
-              onClick={handleClearRoadmap}
-              title="Clear all locations"
-            >
-              Clear All
-            </button>
+          {tripDuration ? (
+            <span className="trip-planner-chip">
+              {tripDuration.nights}박 {tripDuration.days}일
+              {Number.isFinite(maxLocations)
+                ? ` · ${roadmapLocations.length}/${maxLocations}곳`
+                : ` · ${roadmapLocations.length}곳`}
+            </span>
+          ) : (
+            <span className="trip-planner-chip">
+              {roadmapLocations.length > 0
+                ? `${roadmapLocations.length}곳`
+                : '일정 없음'}
+            </span>
           )}
+          {roadmapLocations.length > 0 ? (
+            <>
+              <button
+                type="button"
+                className="trip-planner-save-btn"
+                onClick={() => {
+                  if (!currentUser) {
+                    onRequireLogin?.();
+                    return;
+                  }
+                  setSaveModalOpen(true);
+                }}
+              >
+                마이페이지에 저장
+              </button>
+              <button
+                type="button"
+                className="trip-planner-clear-btn"
+                onClick={handleClearRoadmap}
+                title="일정 전체 삭제"
+              >
+                전체 삭제
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
 
-      {/* Main split-screen container */}
       <div className="trip-planner-main">
-        {/* Left: Roadmap */}
         <div className="trip-planner-left">
+          <TripPlaceSearch
+            regionMap={map}
+            currentLocationIds={roadmapLocations.map(l => l.id)}
+            maxLocations={maxLocations}
+            onAddPlace={handleAddPlaceToRoadmap}
+          />
+
           <div className="sroadmap-wrapper" id="roadmap-container">
             {roadmapLocations.length === 0 ? (
               <div className="sroadmap-empty">
-                <p>👉 Start chatting to add locations to your itinerary</p>
+                <p>채팅이나 위 검색으로 여행 조건·장소를 넣어 보세요.</p>
+                <p className="sroadmap-empty-hint">
+                  예: &quot;부산 2박 3일, 친구랑 트렌디하게, 절은 빼고&quot;
+                </p>
               </div>
             ) : (
               <RoadMap
                 locations={roadmapLocations}
+                tripDayCount={tripDuration?.days ?? 1}
+                itemsPerDay={itemsPerDay}
+                onItineraryChange={handleItineraryChange}
                 onNodeClick={locationId => {
                   const location = roadmapLocations.find(
                     loc => loc.id === locationId,
@@ -301,32 +456,45 @@ export default function TripPlannerPage({ regions = [] }) {
                   }
                 }}
                 onRemoveNode={handleRemoveLocation}
-                onMoveNode={handleMoveLocation}
                 selectedId={selectedLocation?.id}
                 isModalOpen={Boolean(selectedLocation)}
               />
             )}
-
-            {/* Export buttons */}
-            <ExportButton roadmapLocations={roadmapLocations} />
           </div>
         </div>
 
-        {/* Right: Trip Chat Panel */}
         <div className="trip-planner-right">
           <TripChatPanel
             onTripLocationsChange={handleTripLocationsChange}
             onTripLocationsReplaceAll={handleTripLocationsReplaceAll}
             onReplaceLocation={handleReplaceLocation}
             onRemoveLocation={handleRemoveLocation}
-            resolveRegionName={resolveRegionName}
+            resolveRegionName={id => lookupRegion(id)?.name || null}
+            onComparePlaceSelect={id => {
+              const region = lookupRegion(id);
+              if (region) {
+                setSelectedLocation(region);
+                setInsightLocation(null);
+              }
+            }}
             currentLocations={roadmapLocations}
+            tripDuration={tripDuration}
+            onTripMetaChange={handleTripMetaChange}
             onResetRef={chatResetRef}
           />
         </div>
       </div>
 
-      {/* Modal for location details */}
+      {saveModalOpen ? (
+        <TripSelectModal
+          title="어느 여행에 이 일정을 저장할까요?"
+          myTrips={myTrips}
+          onSelect={handleSaveToExistingTrip}
+          onCreateNew={handleCreateTripAndSave}
+          onClose={() => setSaveModalOpen(false)}
+        />
+      ) : null}
+
       <RegionModal
         region={modalRegion}
         isLoading={isInsightLoading}
@@ -335,7 +503,8 @@ export default function TripPlannerPage({ regions = [] }) {
         article={modalArticle}
         articleLoading={modalArticleLoading}
         scrappedIds={scrappedIds}
-        onToggleScrap={handleToggleScrap}
+        onToggleScrap={onToggleScrap}
+        onAddToTrip={handleAddPlaceToRoadmap}
         onClose={() => {
           setSelectedLocation(null);
           setInsightLocation(null);
@@ -347,3 +516,5 @@ export default function TripPlannerPage({ regions = [] }) {
     </div>
   );
 }
+
+export default memo(TripPlannerPage);

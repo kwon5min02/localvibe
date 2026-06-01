@@ -20,10 +20,23 @@ def chat(payload: ChatRequest):
 @router.post("/trip", response_model=TripChatResponse)
 def trip_chat(payload: TripChatRequest):
     duration = {"nights": payload.tripDuration.nights, "days": payload.tripDuration.days} if payload.tripDuration else {"nights": 0, "days": 1}
+    recent = None
+    if payload.recentMessages:
+        recent = [
+            {"role": t.role, "text": t.text}
+            for t in payload.recentMessages[-10:]
+            if t.role in ("user", "assistant") and (t.text or "").strip()
+        ]
     return get_trip_chat_result(
         payload.message,
         duration,
         payload.currentLocationIds or [],
         payload.excludeLocationId,
         replan=bool(payload.replan),
+        recent_messages=recent,
+        current_schedule=(
+            [e.model_dump() for e in payload.currentSchedule]
+            if payload.currentSchedule
+            else None
+        ),
     )

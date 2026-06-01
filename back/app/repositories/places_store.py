@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from datetime import datetime
 from typing import Any, Optional
 
@@ -11,6 +12,9 @@ from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, String,
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.repositories.db import Base
+from app.services.media_utils import sanitize_display_image_url
+from app.utils.province_names import canonical_province, province_tokens_for_filter, special_province_canon_for_locality
+from app.utils.sidebar_location import address_tokens_for_locality, place_row_matches_sidebar_locality
 
 logger = logging.getLogger(__name__)
 
@@ -137,14 +141,14 @@ def place_to_region_dict(
         rec = [place.category]
     ss = summary_short if summary_short is not None else get_summary_short_from_insight(place.insight_json)
     ctid = _content_type_id_from_insight(place.insight_json)
-    kto_img = _kto_image_url_from_insight(place.insight_json)
-    display_img = (primary_image_url or "").strip() or kto_img
+    kto_img = sanitize_display_image_url(_kto_image_url_from_insight(place.insight_json))
+    display_img = sanitize_display_image_url((primary_image_url or "").strip()) or kto_img
     return {
         "id": int(place.place_id),
         "sourceId": place.content_id or "",
         "name": place.name or "",
         "region": place.region or "",
-        "province": place.province or "",
+        "province": canonical_province(place.province) or (place.province or ""),
         "address": place.address or "",
         "latitude": place.latitude,
         "longitude": place.longitude,
@@ -161,6 +165,51 @@ def place_to_region_dict(
 
 def get_place_by_id(session, place_id: int) -> Place | None:
     return session.get(Place, place_id)
+
+
+def place_has_real_display_image(session, place_id: int) -> bool:
+    """크롤 이미지 또는 KTO 실이미지가 있으면 True (Unsplash placeholder 제외)."""
+    p = get_place_by_id(session, place_id)
+    if not p:
+        return False
+    if sanitize_display_image_url(_first_crawled_serve_url(session, place_id)):
+        return True
+    return bool(sanitize_display_image_url(_kto_image_url_from_insight(p.insight_json)))
+
+
+def find_place_ids_by_location_locality(session, locality: str, *, limit: int = 96) -> list[int]:
+    """
+    사이드바 지역 필터: region/province/address만 사용 (name 제외).
+    """
+    label = str(locality or "").strip()
+    if len(label) < 2:
+        return []
+    tokens = address_tokens_for_locality(label)
+    if not tokens:
+        return []
+
+    conds = []
+    for tok in tokens:
+        like = f"%{tok}%"
+        conds.append(Place.address.like(like))
+        conds.append(Place.province.like(like))
+    special_canon = special_province_canon_for_locality(label)
+    if special_canon:
+        for tok in province_tokens_for_filter(special_canon):
+            like = f"%{tok}%"
+            conds.append(Place.province.like(like))
+            conds.append(Place.address.like(like))
+    base = label.replace("시", "").replace("군", "").strip()
+    for reg_val in {label, base, f"{base}시", f"{base}군"}:
+        if reg_val:
+            conds.append(Place.region == reg_val)
+
+    fetch_cap = max(limit * 4, 160)
+    stmt = select(Place).where(or_(*conds)).limit(fetch_cap)
+    places = session.execute(stmt).scalars().all()
+    matched = [p for p in places if place_row_matches_sidebar_locality(p, label)]
+    random.shuffle(matched)
+    return [int(p.place_id) for p in matched[:limit]]
 
 
 def find_place_ids_for_locality_hints(session, keywords: list[str], *, limit: int = 120) -> list[int]:
@@ -223,13 +272,15 @@ def upsert_place_from_legacy_row(session, row: dict[str, Any]) -> Place:
     except Exception:
         raise ValueError("legacy row must have int id") from None
 
-    insight = {
+    insight: dict[str, Any] = {
         "recommendedBusinesses": row.get("recommendedBusinesses") or [],
         "busyHours": row.get("busyHours") or [],
         "targetCustomers": row.get("targetCustomers") or [],
         "contentTypeId": str(row.get("contentTypeId") or "").strip(),
-        "ktoImageUrl": _normalize_https_image_url(row.get("imageUrl")),
     }
+    kto_new = sanitize_display_image_url(_normalize_https_image_url(row.get("imageUrl")))
+    if kto_new:
+        insight["ktoImageUrl"] = kto_new
     insight_json = json.dumps(insight, ensure_ascii=False)
 
     existing = session.get(Place, legacy_id)
@@ -270,15 +321,17 @@ def upsert_place_from_legacy_row(session, row: dict[str, Any]) -> Place:
                 prev = {}
         except Exception:
             prev = {}
-        ni = _normalize_https_image_url(row.get("imageUrl"))
-        merged_kto = ni or _normalize_https_image_url(prev.get("ktoImageUrl"))
+        ni = sanitize_display_image_url(_normalize_https_image_url(row.get("imageUrl")))
+        prev_kto = sanitize_display_image_url(_normalize_https_image_url(prev.get("ktoImageUrl")))
+        merged_kto = ni or prev_kto
         merged = {
             "recommendedBusinesses": row.get("recommendedBusinesses") or prev.get("recommendedBusinesses") or [],
             "busyHours": row.get("busyHours") or prev.get("busyHours") or [],
             "targetCustomers": row.get("targetCustomers") or prev.get("targetCustomers") or [],
             "contentTypeId": str(row.get("contentTypeId") or prev.get("contentTypeId") or "").strip(),
-            "ktoImageUrl": merged_kto,
         }
+        if merged_kto:
+            merged["ktoImageUrl"] = merged_kto
         existing.insight_json = json.dumps(merged, ensure_ascii=False)
         existing.created_at = existing.created_at or now
         session.flush()
@@ -316,6 +369,23 @@ def upsert_place_from_legacy_row(session, row: dict[str, Any]) -> Place:
     return place
 
 
+def _apply_kto_image_to_insight(base: dict[str, Any], kto_image_url: str | None) -> None:
+    """insight_json — Unsplash 등 placeholder는 DB에 넣지 않음."""
+    if "ktoImageUrl" in base:
+        kept = sanitize_display_image_url(_normalize_https_image_url(base.get("ktoImageUrl")))
+        if kept:
+            base["ktoImageUrl"] = kept
+        else:
+            base.pop("ktoImageUrl", None)
+    if not kto_image_url:
+        return
+    cleaned = sanitize_display_image_url(_normalize_https_image_url(kto_image_url))
+    if cleaned:
+        base["ktoImageUrl"] = cleaned
+    else:
+        base.pop("ktoImageUrl", None)
+
+
 def _merge_pipeline_insight(
     existing_json: str | None,
     content_type_id: str | None,
@@ -335,8 +405,7 @@ def _merge_pipeline_insight(
             pass
     if content_type_id:
         base["contentTypeId"] = content_type_id
-    if kto_image_url:
-        base["ktoImageUrl"] = kto_image_url
+    _apply_kto_image_to_insight(base, kto_image_url)
     return json.dumps(base, ensure_ascii=False)
 
 
