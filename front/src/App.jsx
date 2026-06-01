@@ -85,10 +85,23 @@ function dedupeFeedPick(source, picked, usedName, usedImg, size) {
   return picked.slice(0, size);
 }
 
+function feedHasDisplayImages(list) {
+  return Array.isArray(list) && list.some((r) => String(r?.imageUrl || '').trim());
+}
+
+function readInitialDisplayedRegions() {
+  if (isGalleryVectorFeedLocked()) {
+    return readPersistedGalleryRegions() ?? [];
+  }
+  return [];
+}
+
 /** Fisher–Yates 셔플 후 피드용 N개 추출 (사이드바 지역마다 다른 9장) */
 function pickFeedItems(items, size = FEED_SIZE) {
   if (!Array.isArray(items) || !items.length) return [];
-  const shuffled = [...items];
+  const withImg = items.filter((r) => String(r?.imageUrl || '').trim());
+  const pool = withImg.length >= size ? withImg : items;
+  const shuffled = [...pool];
   for (let i = shuffled.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
@@ -163,7 +176,10 @@ export default function App() {
   const location = useLocation();
   const [currentUser, setCurrentUser] = useState(() => { try { const raw = localStorage.getItem('lv_user'); return raw ? JSON.parse(raw) : null; } catch { return null; } });
   const [regions, setRegions] = useState(DEFAULT_REGIONS_NORMALIZED);
-  const [displayedRegions, setDisplayedRegions] = useState(() => readPersistedGalleryRegions() ?? DEFAULT_REGIONS_NORMALIZED);
+  const [displayedRegions, setDisplayedRegions] = useState(readInitialDisplayedRegions);
+  const [galleryFeedLoading, setGalleryFeedLoading] = useState(
+    () => !isGalleryVectorFeedLocked(),
+  );
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [insightRegion, setInsightRegion] = useState(null);
   const [isInsightLoading, setIsInsightLoading] = useState(false);
@@ -262,7 +278,52 @@ export default function App() {
     return () => { cancelled = true; };
   }, [currentUser]);
 
-  useEffect(() => { let m = true; fetch(`${API_BASE_URL}/api/regions`).then(r => r.ok ? r.json() : null).then(data => { if (!m || !Array.isArray(data?.regions) || !data.regions.length) return; const normalized = data.regions.map((r) => normalizeRegionMediaFields({ ...r })); setRegions(normalized); if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) setDisplayedRegions(pickFeedItems(normalized)); }).catch(() => { if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) setDisplayedRegions(pickFeedItems(DEFAULT_REGIONS_NORMALIZED)); }); return () => { m = false; }; }, []);
+  useEffect(() => {
+    let m = true;
+    const vectorLocked = isGalleryVectorFeedLocked();
+    galleryVectorSearchActiveRef.current = vectorLocked;
+
+    const loadFeed = async () => {
+      if (vectorLocked) {
+        if (m) setGalleryFeedLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/regions/feed?limit=${FEED_SIZE}`);
+        const data = res.ok ? await res.json() : null;
+        if (!m || !Array.isArray(data?.regions) || !data.regions.length) return;
+        const normalized = data.regions.map((r) => normalizeRegionMediaFields({ ...r }));
+        setDisplayedRegions(pickFeedItems(normalized, FEED_SIZE));
+      } catch { /* ignore */ }
+      finally {
+        if (m) setGalleryFeedLoading(false);
+      }
+    };
+
+    const loadAll = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/regions`);
+        const data = res.ok ? await res.json() : null;
+        if (!m || !Array.isArray(data?.regions) || !data.regions.length) return;
+        const normalized = data.regions.map((r) => normalizeRegionMediaFields({ ...r }));
+        setRegions(normalized);
+        if (!galleryVectorSearchActiveRef.current && !isGalleryVectorFeedLocked()) {
+          setDisplayedRegions((prev) => (
+            feedHasDisplayImages(prev) ? prev : pickFeedItems(normalized, FEED_SIZE)
+          ));
+        }
+      } catch {
+        if (!m || galleryVectorSearchActiveRef.current || isGalleryVectorFeedLocked()) return;
+        setDisplayedRegions((prev) => (
+          feedHasDisplayImages(prev) ? prev : pickFeedItems(DEFAULT_REGIONS_NORMALIZED, FEED_SIZE)
+        ));
+      }
+    };
+
+    loadFeed();
+    loadAll();
+    return () => { m = false; };
+  }, []);
 
   useEffect(() => { let m = true; if (!selectedRegion?.id) { setInsightRegion(null); return; } setIsInsightLoading(true); fetch(`${API_BASE_URL}/api/regions/${selectedRegion.id}/insight`).then(r => r.ok ? r.json() : null).then(data => { if (m && data?.region) setInsightRegion(normalizeRegionMediaFields({ ...data.region })); }).catch(() => {}).finally(() => { if (m) setIsInsightLoading(false); }); return () => { m = false; }; }, [selectedRegion]);
 
@@ -697,6 +758,9 @@ export default function App() {
                     </button>
                   ) : null}
                 </div>
+              ) : null}
+              {galleryFeedLoading && !feedHasDisplayImages(galleryDisplayRegions) ? (
+                <p className="gallery-feed-loading" aria-live="polite">장소를 불러오는 중…</p>
               ) : null}
               <RegionGallery
                 regions={galleryDisplayRegions}

@@ -2759,6 +2759,14 @@ body { margin: 0; background: var(--gray-50); }
   border-color: var(--gray-300);
 }
 
+.gallery-feed-loading {
+  text-align: center;
+  color: #6b7280;
+  font-size: 14px;
+  padding: 48px 16px 24px;
+  margin: 0;
+}
+
 .gallery-search-center {
   display: flex;
   justify-content: center;

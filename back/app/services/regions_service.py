@@ -93,6 +93,13 @@ def list_regions() -> list[Region]:
     return [_region_from_row(row) for row in region_rows]
 
 
+def list_regions_feed(*, limit: int = 9) -> list[Region]:
+    """메인 갤러리 초기 피드 — MySQL에서 이미지 있는 장소만 무작위 샘플."""
+    with session_scope() as session:
+        rows = places_store.list_random_feed_region_dicts(session, limit=limit)
+    return [_region_from_row(_fill_missing_insight_fields(row)) for row in rows]
+
+
 def list_regions_in_location(locality: str, *, limit: int = 120) -> list[Region]:
     """사이드바 지역 클릭 — 주소·행정구역 기준 장소 목록 (이름 매칭 없음)."""
     label = str(locality or "").strip()
