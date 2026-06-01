@@ -46,6 +46,7 @@ class PlaceTextsResponse(BaseModel):
 class GallerySearchItem(BaseModel):
     place_id: int
     name: str
+    imageUrl: Optional[str] = None
     region: Optional[str] = None
     province: Optional[str] = None
     category: Optional[str] = None

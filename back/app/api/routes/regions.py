@@ -1,7 +1,13 @@
 from fastapi import APIRouter, Query
 
 from app.schemas import RegionInsightResponse, RegionKtoImagesResponse, RegionListResponse
-from app.services import get_region_insight, list_region_kto_image_urls, list_regions, list_regions_in_location
+from app.services import (
+    get_region_insight,
+    list_region_kto_image_urls,
+    list_regions,
+    list_regions_feed,
+    list_regions_in_location,
+)
 
 
 router = APIRouter(prefix="/api/regions", tags=["regions"])
@@ -12,6 +18,11 @@ def get_regions(place_in: str | None = Query(None, description="사이드바 지
     if place_in and str(place_in).strip():
         return {"regions": list_regions_in_location(str(place_in).strip())}
     return {"regions": list_regions()}
+
+
+@router.get("/feed", response_model=RegionListResponse)
+def get_regions_feed(limit: int = Query(9, ge=1, le=24, description="갤러리 초기 무작위 피드 개수")):
+    return {"regions": list_regions_feed(limit=limit)}
 
 
 @router.get("/{region_id}/kto-images", response_model=RegionKtoImagesResponse)

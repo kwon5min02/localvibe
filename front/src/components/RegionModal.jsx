@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import KakaoMap from './KakaoMap';
 import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
+import { buildArticleDisplayData } from '../utils/articleBlocks';
 
 /* ── 인사이트 정규화 ── */
 function normalizeInsightValues(values = []) {
@@ -382,31 +383,7 @@ export default function RegionModal({
     ...crawlImageUrls.map(u => resolveBackendMediaUrl(u, apiBaseUrl)),
   ].filter(Boolean);
 
-  // 아티클: 백엔드 연동 전엔 하드코딩
-  // 백엔드 아티클이 실제 내용 있을 때만 사용, 에러/빈값이면 하드코딩 폴백
-  const hasRealArticle =
-    article &&
-    (article.title || article.content) &&
-    !String(article.content || '').includes('오류') &&
-    !String(article.content || '').includes('불러오지 못') &&
-    String(article.content || '').length > 30;
-
-  function parseArticleBody(content) {
-    try {
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    } catch {}
-    return [{ type: 'paragraph', text: content }];
-  }
-
-  const articleData = hasRealArticle
-    ? {
-        title: article.title || generateArticle(region).title,
-        author: 'LocalVibe AI',
-        date: '',
-        body: parseArticleBody(article.content),
-      }
-    : generateArticle(region);
+  const articleData = buildArticleDisplayData(article, region);
 
   return (
     <div
