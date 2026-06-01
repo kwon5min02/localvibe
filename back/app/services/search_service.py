@@ -240,10 +240,13 @@ def search_gallery(query: str, region_filter: str | None) -> list[dict[str, Any]
                         break
                 if theme_deprioritize_row(row_stub, theme_profile):
                     final -= float(os.getenv("GALLERY_THEME_DEPRIORITIZE_PENALTY", "0.24"))
+            region_dict = places_store.get_as_region_dict(session, place_id)
+            image_url = str((region_dict or {}).get("imageUrl") or "").strip()
             out.append(
                 {
                     "place_id": place_id,
                     "name": p.name,
+                    "imageUrl": image_url,
                     "region": p.region,
                     "province": p.province,
                     "category": p.category,

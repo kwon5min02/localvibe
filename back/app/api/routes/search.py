@@ -14,6 +14,7 @@ def gallery_search(q: str = Query(..., min_length=1), region: str | None = Query
             GallerySearchItem(
                 place_id=r["place_id"],
                 name=r["name"],
+                imageUrl=r.get("imageUrl"),
                 region=r.get("region"),
                 province=r.get("province"),
                 category=r.get("category"),

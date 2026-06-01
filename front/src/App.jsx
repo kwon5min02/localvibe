@@ -214,10 +214,11 @@ function mapSearchHitToRegion(row, regionMap) {
     row.pinecone_similarity != null
       ? `유사도 ${Number(row.pinecone_similarity).toFixed(3)}`
       : '';
+  const imageUrl = String(row.imageUrl || base?.imageUrl || '').trim();
   return {
     id,
     name: row.name || base?.name || '이름 없음',
-    imageUrl: base?.imageUrl || '',
+    imageUrl,
     summary:
       base?.summary ||
       [row.category, row.region, sim].filter(Boolean).join(' · ') ||
@@ -502,6 +503,17 @@ export default function App() {
 
   useEffect(() => {
     let m = true;
+    if (isGalleryVectorFeedLocked()) {
+      try {
+        const raw = sessionStorage.getItem(GALLERY_SEARCH_RESULTS_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(arr) && arr.length > 0 && !arr.some((r) => String(r?.imageUrl || '').trim())) {
+          clearGalleryVectorLock(galleryVectorSearchActiveRef);
+        }
+      } catch {
+        clearGalleryVectorLock(galleryVectorSearchActiveRef);
+      }
+    }
     const vectorLocked = isGalleryVectorFeedLocked();
     galleryVectorSearchActiveRef.current = vectorLocked;
 
@@ -515,7 +527,7 @@ export default function App() {
         const data = res.ok ? await res.json() : null;
         if (!m || !Array.isArray(data?.regions) || !data.regions.length) return;
         const normalized = data.regions.map((r) => normalizeRegionMediaFields({ ...r }));
-        setDisplayedRegions(pickFeedItems(normalized, FEED_SIZE));
+        setDisplayedRegions(normalized.slice(0, FEED_SIZE));
       } catch { /* ignore */ }
       finally {
         if (m) setGalleryFeedLoading(false);
@@ -675,6 +687,24 @@ export default function App() {
     }
     return map;
   }, [regions]);
+
+  /** regionMap·검색 API 로드 후 카드 imageUrl 보강 (7MB regions 대기 없이) */
+  useEffect(() => {
+    if (!regions.length || !displayedRegions.length) return;
+    setDisplayedRegions((prev) => {
+      let changed = false;
+      const next = prev.map((r) => {
+        const id = Number(r?.id);
+        if (!Number.isFinite(id)) return r;
+        const base = regionMap.get(id);
+        const imageUrl = String(r.imageUrl || base?.imageUrl || '').trim();
+        if (imageUrl === String(r.imageUrl || '').trim()) return r;
+        changed = true;
+        return { ...r, imageUrl };
+      });
+      return changed ? next : prev;
+    });
+  }, [regions, regionMap, displayedRegions.length]);
 
   useEffect(() => {
     const tab = location.state?.tab;
