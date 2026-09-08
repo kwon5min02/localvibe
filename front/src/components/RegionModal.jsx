@@ -1,5 +1,6 @@
-import { useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import KakaoMap from './KakaoMap';
+import LineIcon from './ui/LineIcon';
 import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
 import { buildArticleDisplayData } from '../utils/articleBlocks';
 
@@ -129,15 +130,7 @@ function ImageCarousel({ images, fallback }) {
   };
 
   return (
-    <div
-      style={{
-        position: 'relative',
-        width: '100%',
-        height: 280,
-        overflow: 'hidden',
-        background: '#f0f0f0',
-      }}
-    >
+    <div className="rm-carousel">
       {/* 이미지 */}
       <img
         src={allImages[current]}
@@ -370,12 +363,28 @@ export default function RegionModal({
   onToggleScrap,
   onAddToTrip,
 }) {
+  // Esc로 닫기 + 열려 있는 동안 뒤 배경 스크롤 잠금
+  useEffect(() => {
+    if (!region) return undefined;
+    const onKeyDown = e => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [region, onClose]);
+
   if (!region) return null;
 
   const cards = toCardItems(region);
   const isScrapped = scrappedIds.includes(region.id);
 
-  // 이미지 목록: 크롤링 이미지 + 대표 이미지
+  // 사진 크롤링을 하지 않으므로 이미지가 없는 장소가 많다.
+  // 그럴 때는 빈 캐러셀 대신 아예 접어서 글이 먼저 보이게 한다.
   const allImages = [
     ...(region.imageUrl
       ? [resolveBackendMediaUrl(region.imageUrl, apiBaseUrl)]
@@ -384,304 +393,122 @@ export default function RegionModal({
   ].filter(Boolean);
 
   const articleData = buildArticleDisplayData(article, region);
+  const hasSideContent = cards.length > 0 || region.address || region.latitude;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.58)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-        zIndex: 2000,
-      }}
-      role="presentation"
-      onClick={onClose}
-    >
+    <div className="rm-backdrop" role="presentation" onClick={onClose}>
       <article
-        style={{
-          position: 'relative',
-          width: 'min(600px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          background: '#fff',
-          borderRadius: 16,
-          zIndex: 2001,
-          boxShadow: '0 24px 64px rgba(0,0,0,0.22)',
-        }}
+        className="rm-dialog"
         role="dialog"
         aria-modal="true"
+        aria-labelledby="rm-title"
         onClick={e => e.stopPropagation()}
       >
-        {/* ── 상단 바: 뒤로가기 + 스크랩/담기 ── */}
-        <div
-          style={{
-            position: 'sticky',
-            top: 0,
-            zIndex: 20,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '14px 20px',
-            background: 'rgba(255,255,255,0.96)',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
+        {/* ── 상단 바 ── */}
+        <div className="rm-bar">
           <button
             type="button"
+            className="rm-close"
             onClick={onClose}
             aria-label="닫기"
-            style={{
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              fontSize: 22,
-              lineHeight: 1,
-              padding: 0,
-              color: '#111',
-              display: 'flex',
-              alignItems: 'center',
-            }}
           >
-            ⇐
+            <LineIcon name="close" className="" />
           </button>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="rm-bar-actions">
             <button
               type="button"
+              className={`rm-heart${isScrapped ? ' active' : ''}`}
               onClick={() => onToggleScrap?.(region.id)}
               title={isScrapped ? '스크랩 해제' : '스크랩'}
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: '50%',
-                border: '1px solid #eee',
-                background: '#fff',
-                cursor: 'pointer',
-                fontSize: 16,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: isScrapped ? '#e05b6f' : '#ccc',
-                transition: 'all 150ms',
-              }}
             >
               {isScrapped ? '♥' : '♡'}
             </button>
             <button
               type="button"
+              className="rm-add"
               onClick={() => onAddToTrip?.(region)}
-              style={{
-                height: 34,
-                padding: '0 14px',
-                borderRadius: 8,
-                border: 'none',
-                background: '#111',
-                color: '#fff',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                whiteSpace: 'nowrap',
-              }}
             >
               + 담기
             </button>
           </div>
         </div>
 
-        {/* ── 타이틀 + 저자 (중앙 정렬) ── */}
-        <div style={{ padding: '8px 32px 24px', textAlign: 'center' }}>
-          <h1
-            style={{
-              margin: '0 0 6px',
-              fontSize: 28,
-              fontWeight: 800,
-              color: '#111',
-              lineHeight: 1.2,
-              letterSpacing: '-0.5px',
-              fontFamily: "'Pretendard', sans-serif",
-            }}
-          >
-            {region.name}
-          </h1>
-          {articleData.title && articleData.title !== region.name && (
-            <p style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 600, color: '#999', letterSpacing: '-0.2px', fontFamily: "'Pretendard', sans-serif" }}>
-              {articleData.title}
+        <div
+          className="rm-body"
+          style={
+            hasSideContent ? undefined : { gridTemplateColumns: 'minmax(0,1fr)' }
+          }
+        >
+          <div className="rm-main">
+            <h1 className="rm-title" id="rm-title">
+              {region.name}
+            </h1>
+            {articleData.title && articleData.title !== region.name && (
+              <p className="rm-subtitle">{articleData.title}</p>
+            )}
+            <p className="rm-meta">
+              {articleData.author}
+              {region.region && <span> · {region.region}</span>}
             </p>
-          )}
-          <p
-            style={{
-              margin: 0,
-              fontSize: 13,
-              color: '#999',
-              fontFamily: "'Pretendard', sans-serif",
-            }}
-          >
-            {articleData.author}
-            {region.region && <span> · {region.region}</span>}
-          </p>
-        </div>
 
-        {/* ── 이미지 풀 너비 ── */}
-        <ImageCarousel images={allImages} fallback={FALLBACK_IMG} />
+            {allImages.length > 0 && (
+              <ImageCarousel images={allImages} fallback={FALLBACK_IMG} />
+            )}
 
-        {/* ── 아티클 본문 ── */}
-        <div style={{ padding: '32px 32px 0' }}>
-          {articleLoading && (
-            <div
-              style={{
-                padding: '20px 0',
-                textAlign: 'center',
-                color: '#aaa',
-                fontSize: 13,
-              }}
-            >
-              <div style={{ marginBottom: 8 }}>AI 아티클 생성 중…</div>
-              <div
-                style={{ display: 'flex', gap: 4, justifyContent: 'center' }}
-              >
-                {[0, 1, 2].map(i => (
-                  <div
-                    key={i}
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: '50%',
-                      background: '#ddd',
-                      animation: 'skeleton-bounce 1.2s infinite ease-in-out',
-                      animationDelay: `${i * 0.2}s`,
-                    }}
-                  />
-                ))}
+            {articleLoading ? (
+              <div className="rm-loading">
+                <div>AI 아티클 생성 중…</div>
+                <div className="rm-loading-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </div>
               </div>
-            </div>
-          )}
-          {!articleLoading && <ArticleBody blocks={articleData.body} />}
-        </div>
+            ) : (
+              <ArticleBody blocks={articleData.body} />
+            )}
+          </div>
 
-        {/* ── 장소 인사이트 ── */}
-        {cards.length > 0 && (
-          <div style={{ padding: '28px 32px 0' }}>
-            <h3
-              style={{
-                margin: '0 0 12px',
-                fontSize: 11,
-                fontWeight: 700,
-                color: '#bbb',
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-              }}
-            >
-              장소 인사이트
-            </h3>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, minmax(0,1fr))',
-                gap: 8,
-              }}
-            >
-              {cards.map(card => (
-                <div
-                  key={card.title}
-                  style={{
-                    border: '1px solid #eee',
-                    borderRadius: 8,
-                    padding: '10px 12px',
-                    background: '#fafafa',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 10,
-                      fontWeight: 700,
-                      color: '#aaa',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                      marginBottom: 8,
-                    }}
-                  >
-                    {card.title}
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {card.values.map(v => (
-                      <span
-                        key={v}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          padding: '2px 7px',
-                          borderRadius: 999,
-                          border: '1px solid #eee',
-                          background: '#fff',
-                          color: '#555',
-                          fontSize: 10,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {v}
-                      </span>
+          {hasSideContent && (
+            <aside className="rm-side">
+              {cards.length > 0 && (
+                <section>
+                  <h3 className="rm-section-title">장소 인사이트</h3>
+                  <div className="rm-insight-list">
+                    {cards.map(card => (
+                      <div key={card.title} className="rm-insight">
+                        <div className="rm-insight-title">{card.title}</div>
+                        <div className="rm-tags">
+                          {card.values.map(v => (
+                            <span key={v} className="rm-tag">
+                              {v}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+                </section>
+              )}
 
-        {/* ── 위치 지도 ── */}
-        <div style={{ padding: '20px 32px 32px' }}>
-          <h3
-            style={{
-              margin: '0 0 12px',
-              fontSize: 11,
-              fontWeight: 700,
-              color: '#bbb',
-              textTransform: 'uppercase',
-              letterSpacing: '1px',
-            }}
-          >
-            위치
-          </h3>
-          <div
-            style={{
-              borderRadius: 10,
-              overflow: 'hidden',
-              border: '1px solid #eee',
-            }}
-          >
-            <KakaoMap
-              address={region.address}
-              latitude={region.latitude}
-              longitude={region.longitude}
-            />
-          </div>
-          {region.address && (
-            <p style={{ margin: '10px 0 0', fontSize: 12, color: '#888' }}>
-              {region.address}
-            </p>
+              <section>
+                <h3 className="rm-section-title">위치</h3>
+                <div className="rm-map">
+                  <KakaoMap
+                    address={region.address}
+                    latitude={region.latitude}
+                    longitude={region.longitude}
+                  />
+                </div>
+                {region.address && (
+                  <p className="rm-address">{region.address}</p>
+                )}
+              </section>
+            </aside>
           )}
         </div>
 
-        {isLoading && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 60,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              background: 'rgba(0,0,0,0.65)',
-              color: '#fff',
-              fontSize: 12,
-              padding: '6px 14px',
-              borderRadius: 999,
-            }}
-          >
-            데이터 불러오는 중…
-          </div>
-        )}
+        {isLoading && <div className="rm-badge">데이터 불러오는 중…</div>}
       </article>
     </div>
   );

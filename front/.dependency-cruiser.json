@@ -1,0 +1,39 @@
+{
+  "$schema": "node_modules/dependency-cruiser/schema/configuration.schema.json",
+  "forbidden": [
+    {
+      "name": "no-cross-feature-import",
+      "severity": "error",
+      "comment": "다른 feature 직접 import 금지 — Context 또는 shared를 통해 통신하세요",
+      "from": { "path": "^src/features/([^/]+)/" },
+      "to":   { "path": "^src/features/", "pathNot": "^src/features/$1/" }
+    },
+    {
+      "name": "no-shared-imports-features",
+      "severity": "error",
+      "comment": "shared 레이어는 features를 import 할 수 없습니다",
+      "from": { "path": "^src/shared/" },
+      "to":   { "path": "^src/features/" }
+    },
+    {
+      "name": "no-components-imports-features",
+      "severity": "error",
+      "comment": "공용 components는 features를 import 할 수 없습니다. 필요하면 pages나 App에서 조합하세요",
+      "from": { "path": "^src/components/" },
+      "to":   { "path": "^src/features/" }
+    },
+    {
+      "name": "no-circular",
+      "severity": "warn",
+      "comment": "순환 의존성 감지",
+      "from": {},
+      "to":   { "circular": true }
+    }
+  ],
+  "options": {
+    "doNotFollow": { "path": "node_modules" },
+    "moduleSystems": ["es6", "cjs"],
+    "tsPreCompilationDeps": false,
+    "combinedDependencies": false
+  }
+}

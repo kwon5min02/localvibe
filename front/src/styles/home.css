@@ -1,0 +1,533 @@
+/* =============================================
+   랜딩(StartHome) — 스토리텔링 세로 스크롤
+   (App.css의 모노크롬 변수 사용)
+   ============================================= */
+
+.sh-page {
+  min-height: 100vh;
+  padding-top: 72px;
+  background: var(--white);
+}
+
+/* ── 스크롤 등장 애니메이션 ── */
+.sh-fade {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.55s ease,
+    transform 0.55s ease;
+}
+
+.sh-fade.sh-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* 여러 개가 함께 뜨는 카드·스텝은 순차 등장 */
+.sh-stagger > *:nth-child(2) {
+  transition-delay: 90ms;
+}
+
+.sh-stagger > *:nth-child(3) {
+  transition-delay: 180ms;
+}
+
+/* ── 섹션 공통 ── */
+.sh-section {
+  max-width: 1100px;
+  width: 90%;
+  margin: 0 auto;
+  padding: clamp(56px, 8vw, 96px) 0;
+}
+
+.sh-eyebrow {
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--gray-300);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.sh-section-title {
+  margin: 0 0 clamp(28px, 4vw, 48px);
+  font-size: clamp(22px, 3vw, 40px);
+  font-weight: 800;
+  color: var(--black);
+  letter-spacing: -0.4px;
+}
+
+/* ── 1. Hero — 사진 없이 타이포 + 그라데이션 ── */
+.sh-hero {
+  position: relative;
+  min-height: calc(100vh - 72px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 5% clamp(60px, 8vw, 96px);
+  overflow: hidden;
+  background:
+    radial-gradient(60% 50% at 50% 0%, var(--gray-100) 0%, transparent 70%),
+    radial-gradient(80% 60% at 50% 110%, var(--gray-100) 0%, transparent 65%);
+}
+
+.sh-hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 900px;
+  width: 100%;
+}
+
+.sh-hero-eyebrow {
+  margin: 0 0 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gray-400);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.sh-hero-title {
+  margin: 0 0 clamp(16px, 2vw, 24px);
+  font-size: clamp(34px, 6vw, 76px);
+  font-weight: 800;
+  line-height: 1.12;
+  letter-spacing: -1.5px;
+  color: var(--black);
+}
+
+.sh-hero-desc {
+  margin: 0 auto clamp(28px, 3.5vw, 40px);
+  max-width: 620px;
+  min-height: 3.4em;
+  font-size: clamp(15px, 1.5vw, 20px);
+  line-height: 1.75;
+  color: var(--gray-500);
+  white-space: pre-line;
+}
+
+.sh-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  background: var(--black);
+  vertical-align: text-bottom;
+  animation: sh-blink 0.7s steps(1) infinite;
+}
+
+@keyframes sh-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 히어로 CTA — 타이핑이 끝나면 .ready가 붙어 떠오릅니다. */
+.sh-hero-btn {
+  padding: clamp(12px, 1vw, 16px) clamp(24px, 2.5vw, 36px);
+  background: var(--black);
+  color: var(--white);
+  border: none;
+  border-radius: 8px;
+  font: inherit;
+  font-size: clamp(14px, 1.3vw, 18px);
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition:
+    opacity 0.4s ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.sh-hero-btn.ready {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.sh-hero-btn.ready:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
+/* 스크롤 유도 */
+.sh-scroll-hint {
+  position: absolute;
+  bottom: clamp(24px, 4vw, 44px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--gray-400);
+}
+
+.sh-scroll-line {
+  width: 1px;
+  height: 42px;
+  background: linear-gradient(to bottom, transparent, var(--gray-400));
+  animation: sh-drop 1.8s ease-in-out infinite;
+}
+
+@keyframes sh-drop {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(-4px);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(4px);
+  }
+}
+
+/* ── 2. About ── */
+.sh-about {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: center;
+}
+
+.sh-about-lead {
+  margin: 0 0 18px;
+  font-size: clamp(20px, 2.6vw, 34px);
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: -0.5px;
+  color: var(--black);
+}
+
+.sh-about-text {
+  margin: 0 0 14px;
+  font-size: clamp(14px, 1.3vw, 17px);
+  line-height: 1.85;
+  color: var(--gray-500);
+}
+
+.sh-about-text:last-child {
+  margin-bottom: 0;
+}
+
+/* 지도 그래픽 */
+.sh-map {
+  width: 100%;
+  height: auto;
+  color: var(--gray-300);
+}
+
+.sh-map-pin {
+  color: var(--black);
+  opacity: 0;
+  animation: sh-pin-in 0.5s ease forwards;
+}
+
+.sh-map-pin:nth-of-type(2) {
+  animation-delay: 0.15s;
+}
+
+.sh-map-pin:nth-of-type(3) {
+  animation-delay: 0.3s;
+}
+
+.sh-map-pin:nth-of-type(4) {
+  animation-delay: 0.45s;
+}
+
+@keyframes sh-pin-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 근거 카드 3개 */
+.sh-tech-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-top: clamp(36px, 5vw, 56px);
+}
+
+.sh-tech-card {
+  padding: 28px 24px;
+  background: var(--white);
+  border: 1px solid var(--gray-100);
+  border-radius: 12px;
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease;
+}
+
+.sh-tech-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+}
+
+.sh-tech-icon {
+  display: block;
+  width: 26px;
+  height: 26px;
+  margin-bottom: 14px;
+  color: var(--black);
+}
+
+.sh-tech-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--black);
+}
+
+.sh-tech-desc {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--gray-500);
+}
+
+/* ── 3. Explore — 바이브 태그 ── */
+.sh-tag-row {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.sh-tag {
+  padding: 9px 18px;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  font: inherit;
+  font-size: clamp(13px, 1.1vw, 16px);
+  font-weight: 500;
+  color: var(--gray-800);
+  cursor: pointer;
+  transition:
+    background var(--tr-fast),
+    color var(--tr-fast),
+    border-color var(--tr-fast);
+}
+
+.sh-tag:hover {
+  background: var(--black);
+  border-color: var(--black);
+  color: var(--white);
+}
+
+/* ── 4. How to use — 3단계 ── */
+.sh-steps {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 40px;
+}
+
+.sh-step {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 20px;
+  text-align: center;
+}
+
+/* 스텝 사이 연결선 */
+.sh-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  width: 100%;
+  height: 1px;
+  background: var(--gray-200);
+  z-index: 0;
+}
+
+.sh-step-num {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--black);
+  color: var(--white);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.sh-step-title {
+  margin: 20px 0 10px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--black);
+  letter-spacing: -0.3px;
+}
+
+.sh-step-desc {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--gray-500);
+  white-space: pre-line;
+}
+
+/* ── 5. CTA + 뉴스레터 ── */
+.sh-cta {
+  margin-top: 60px;
+  background: var(--black);
+}
+
+.sh-cta-inner {
+  max-width: 800px;
+  width: 90%;
+  margin: 0 auto;
+  padding: clamp(48px, 8vw, 80px) 0;
+  text-align: center;
+}
+
+.sh-cta-title {
+  margin: 0 0 28px;
+  font-size: clamp(22px, 3vw, 42px);
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--white);
+}
+
+.sh-cta-btn {
+  padding: 14px 32px;
+  background: var(--white);
+  color: var(--black);
+  border: none;
+  border-radius: 8px;
+  font: inherit;
+  font-size: clamp(14px, 1.3vw, 18px);
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--tr-fast),
+    transform var(--tr-fast);
+}
+
+.sh-cta-btn:hover {
+  background: var(--gray-200);
+  transform: translateY(-2px);
+}
+
+/* ── 푸터 ── */
+.sh-footer {
+  padding: clamp(32px, 5vw, 56px) 0 24px;
+  background: var(--white);
+  border-top: 1px solid var(--gray-100);
+}
+
+.sh-footer-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 24px;
+  max-width: 1100px;
+  width: 90%;
+  margin: 0 auto;
+}
+
+.sh-footer-brand {
+  margin-bottom: 6px;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--black);
+}
+
+.sh-footer-desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--gray-400);
+}
+
+.sh-footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.sh-footer-link {
+  font-size: 13px;
+  color: var(--gray-400);
+  cursor: pointer;
+}
+
+.sh-footer-bottom {
+  max-width: 1100px;
+  width: 90%;
+  margin: 20px auto 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--gray-100);
+  font-size: 12px;
+  color: var(--gray-300);
+}
+
+/* ── 반응형 ── */
+@media (max-width: 900px) {
+  .sh-about {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sh-map-wrap {
+    max-width: 380px;
+    margin: 0 auto;
+  }
+
+  .sh-tech-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sh-steps {
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .sh-step:not(:last-child)::before {
+    display: none;
+  }
+}
+
+/* ── 모션 최소화 설정 존중 ── */
+@media (prefers-reduced-motion: reduce) {
+  .sh-fade,
+  .sh-hero-btn {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .sh-scroll-line,
+  .sh-cursor,
+  .sh-map-pin {
+    animation: none;
+    opacity: 1;
+  }
+}

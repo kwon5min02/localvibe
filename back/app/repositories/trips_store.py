@@ -79,6 +79,15 @@ def create_trip(session, user_id: int, name: str) -> UserTrip:
     return trip
 
 
+def rename_trip(session, user_id: int, trip_id: int, name: str) -> UserTrip | None:
+    trip = get_trip_for_user(session, user_id, trip_id)
+    if not trip:
+        return None
+    trip.name = name.strip()[:255]
+    session.flush()
+    return trip
+
+
 def delete_trip(session, user_id: int, trip_id: int) -> bool:
     trip = get_trip_for_user(session, user_id, trip_id)
     if not trip:

@@ -1,6 +1,7 @@
 import { GoogleLogin } from "@react-oauth/google";
 import { useNavigate } from "react-router-dom";
 import StartNavbar from "../components/StartNavbar";
+import { readPictureFromToken } from "../shared/auth/storedUser";
 
 export default function StartLogin() {
   const navigate = useNavigate();
@@ -18,10 +19,20 @@ export default function StartLogin() {
       }
       const data = await response.json();
       const nextToken = String(data?.access_token || "");
-      const nextUser = data?.user || null;
-      if (!nextToken || !nextUser) {
+      const responseUser = data?.user || null;
+      if (!nextToken || !responseUser) {
         throw new Error("invalid auth response");
       }
+      // 응답에 picture가 비어 있으면 토큰 claims에서 보완
+      const nextUser = {
+        ...responseUser,
+        picture:
+          responseUser.picture ||
+          responseUser.profile_image ||
+          responseUser.profileImage ||
+          readPictureFromToken(credential) ||
+          readPictureFromToken(nextToken),
+      };
       localStorage.setItem("lv_access_token", nextToken);
       localStorage.setItem("lv_user", JSON.stringify(nextUser));
       window.dispatchEvent(new Event("lv-auth-changed"));

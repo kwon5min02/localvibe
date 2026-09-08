@@ -1,5 +1,5 @@
-from .chat_service import get_chat_result, get_trip_chat_result
-from .regions_service import (
+from app.modules.chat.service import get_chat_result, get_trip_chat_result
+from app.modules.regions.service import (
     get_region_insight,
     list_region_kto_image_urls,
     list_regions,

@@ -12,6 +12,7 @@ from .region import Region, RegionInsight, RegionInsightResponse, RegionKtoImage
 from .scraps import ScrapListResponse, ScrapSyncRequest, ScrapToggleResponse
 from .trips import (
     TripCreateRequest,
+    TripRenameRequest,
     TripListResponse,
     TripReplacePlacesRequest,
     TripResponse,
@@ -44,6 +45,7 @@ __all__ = [
     "ScrapSyncRequest",
     "ScrapToggleResponse",
     "TripCreateRequest",
+    "TripRenameRequest",
     "TripListResponse",
     "TripResponse",
     "TripSyncRequest",

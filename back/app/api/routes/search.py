@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 
 from app.schemas import GallerySearchItem, GallerySearchResponse
-from app.services.search_service import search_gallery
+from app.modules.search.service import search_gallery
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 

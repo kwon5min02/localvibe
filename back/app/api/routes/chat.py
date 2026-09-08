@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from app.schemas import ChatRequest, ChatResponse, TripChatRequest, TripChatResponse
-from app.services import get_chat_result, get_trip_chat_result
+from app.modules.chat.service import get_chat_result, get_trip_chat_result
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 

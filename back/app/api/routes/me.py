@@ -11,6 +11,7 @@ from app.schemas import (
     ScrapToggleResponse,
     TripCreateRequest,
     TripListResponse,
+    TripRenameRequest,
     TripResponse,
     TripReplacePlacesRequest,
     TripSyncRequest,
@@ -138,6 +139,23 @@ def replace_my_trip_places(
         if not trips_store.replace_trip_places(session, user.user_id, trip_id, place_ids):
             raise HTTPException(status_code=404, detail="여행을 찾을 수 없습니다.")
         trip = trips_store.get_trip_for_user(session, user.user_id, trip_id)
+        if not trip:
+            raise HTTPException(status_code=404, detail="여행을 찾을 수 없습니다.")
+        return _trip_response(session, trip)
+
+
+@router.patch("/trips/{trip_id}", response_model=TripResponse)
+def rename_my_trip(
+    trip_id: int,
+    body: TripRenameRequest,
+    user: AuthUser = Depends(get_current_user),
+):
+    """여행 이름만 변경."""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="여행 이름을 입력해 주세요.")
+    with session_scope() as session:
+        trip = trips_store.rename_trip(session, user.user_id, trip_id, name)
         if not trip:
             raise HTTPException(status_code=404, detail="여행을 찾을 수 없습니다.")
         return _trip_response(session, trip)

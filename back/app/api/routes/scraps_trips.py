@@ -24,7 +24,7 @@ from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, String, Unique
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.repositories.db import Base, session_scope
-from app.services.auth_service import get_current_user_id  # JWT에서 user_id 추출
+from app.modules.auth.service import get_current_user_id  # JWT에서 user_id 추출
 
 router = APIRouter(prefix="/api", tags=["scraps", "trips"])
 

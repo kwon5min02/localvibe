@@ -23,6 +23,10 @@ export default function TopHeader({ user, onGoogleCredential, onLogout }) {
                   objectFit: 'cover',
                   border: '1px solid #444',
                 }}
+                referrerPolicy="no-referrer"
+                onError={e => {
+                  e.currentTarget.style.display = 'none';
+                }}
               />
             ) : (
               <div

@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.services.geocode_service import geocode_address_with_kakao
+from app.modules.regions.geocode import geocode_address_with_kakao
 
 router = APIRouter(prefix="/api", tags=["geocode"])
 

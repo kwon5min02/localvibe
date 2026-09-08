@@ -69,7 +69,7 @@ def _row_to_card(row: dict, attributes: list[dict] | None = None) -> dict:
 
 
 async def compare_places(place_a: str, place_b: str) -> dict:
-    from app.services.comparison_utils import (
+    from app.shared.comparison import (
         build_attribute_matrix,
         generate_comparison_summary,
     )

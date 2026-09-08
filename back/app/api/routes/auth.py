@@ -3,7 +3,7 @@ import os
 from fastapi import APIRouter
 
 from app.schemas import GoogleLoginRequest, GoogleLoginResponse, UserProfile
-from app.services.auth_service import build_access_token, verify_google_id_token
+from app.modules.auth.service import build_access_token, verify_google_id_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

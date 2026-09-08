@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
 import {
-  displayOrderLabel,
   displayPeriod,
   formatDayPeriodSummary,
   groupDayItemsByPeriodBand,
@@ -10,9 +9,6 @@ import {
   moveLocationToIndex,
   shouldShowCardPeriod,
 } from '../utils/tripSchedule';
-
-const FALLBACK_IMAGE =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='480' height='300'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23e8ebf7'/%3E%3Cstop offset='100%25' stop-color='%23cdd6f2'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='100%25' height='100%25' fill='url(%23g)'/%3E%3Ctext x='50%25' y='52%25' dominant-baseline='middle' text-anchor='middle' fill='%235468a3' font-family='Arial' font-size='28'%3ELocalVibe%3C/text%3E%3C/svg%3E";
 
 const itemVariants = {
   hidden: { opacity: 0, y: 14 },
@@ -55,6 +51,14 @@ function DragHandleIcon() {
   );
 }
 
+function pickAddress(loc) {
+  const address = String(loc?.address ?? '').trim();
+  if (address) return address;
+  const raw = String(loc?.summary ?? loc?.description ?? '');
+  const matched = raw.match(/\(주소:\s*([^)]+)\)/);
+  return matched ? matched[1].trim() : String(loc?.region ?? '').trim();
+}
+
 export default function RoadMap({
   locations = [],
   tripDayCount = 1,
@@ -74,9 +78,8 @@ export default function RoadMap({
       id: loc?.id != null ? String(loc.id) : String(index),
       clickId: loc?.id != null ? loc.id : index,
       name: loc?.name ?? `장소 ${index + 1}`,
-      description:
-        loc?.summary ?? loc?.description ?? '지역 정보가 준비 중입니다.',
-      imageUrl: resolveBackendMediaUrl(loc?.imageUrl) || FALLBACK_IMAGE,
+      address: pickAddress(loc),
+      imageUrl: resolveBackendMediaUrl(loc?.imageUrl),
       tripDay: loc?.tripDay ?? null,
       period: displayPeriod(loc),
     }));
@@ -261,36 +264,44 @@ export default function RoadMap({
           </div>
         </div>
 
-        <button
-          className="sroadmap-image-trigger"
-          type="button"
-          aria-label={`${node.name} 상세 보기`}
-          onClick={() => onNodeClick?.(node.clickId)}
-        >
-          <div className="sroadmap-thumb-wrap">
-            <img
-              className="sroadmap-thumb"
-              src={node.imageUrl}
-              alt={node.name}
-              loading="lazy"
-              draggable={false}
-              onError={event => {
-                event.currentTarget.src = FALLBACK_IMAGE;
-              }}
-            />
-          </div>
-        </button>
+        <span className="sroadmap-order" aria-hidden="true">
+          {node.orderInDay}
+        </span>
+
+        {node.imageUrl ? (
+          <button
+            className="sroadmap-image-trigger"
+            type="button"
+            aria-label={`${node.name} 상세 보기`}
+            onClick={() => onNodeClick?.(node.clickId)}
+          >
+            <div className="sroadmap-thumb-wrap">
+              <img
+                className="sroadmap-thumb"
+                src={node.imageUrl}
+                alt={node.name}
+                loading="lazy"
+                draggable={false}
+                referrerPolicy="no-referrer"
+                onError={event => {
+                  event.currentTarget.closest(
+                    '.sroadmap-image-trigger',
+                  ).style.display = 'none';
+                }}
+              />
+            </div>
+          </button>
+        ) : null}
 
         <div
           className="sroadmap-body"
           onClick={() => onNodeClick?.(node.clickId)}
           style={{ cursor: 'pointer' }}
         >
-          <p className="sroadmap-time sroadmap-time--order">
-            {displayOrderLabel(node.orderInDay)}
-          </p>
           <h4 className="sroadmap-title">{node.name}</h4>
-          <p className="sroadmap-description">{node.description}</p>
+          {node.address && (
+            <p className="sroadmap-address">{node.address}</p>
+          )}
         </div>
       </motion.article>
     );

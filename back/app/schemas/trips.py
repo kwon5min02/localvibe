@@ -7,6 +7,10 @@ class TripCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
 
 
+class TripRenameRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+
+
 class TripResponse(BaseModel):
     id: int
     name: str

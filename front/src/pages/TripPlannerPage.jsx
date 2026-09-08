@@ -1,18 +1,19 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import RoadMap from '../components/RoadMap';
 import TripChatPanel from '../components/TripChatPanel';
-import TripPlaceSearch from '../components/TripPlaceSearch';
 import TripSelectModal from '../components/TripSelectModal';
 import RegionModal from '../components/RegionModal';
 import { normalizeRegionMediaFields, resolveBackendMediaUrl } from '../utils/apiMediaUrl';
-import { createTrip, replaceTripPlaces } from '../utils/tripsApi';
+import { createTrip, replaceTripPlaces } from '../features/trips/tripsApi';
 import {
   applyScheduleToRegions,
   recomputeScheduleForOrderedLocations,
   TRIP_ITEMS_PER_DAY_DEFAULT,
 } from '../utils/tripSchedule';
 import {
+  clearGuestPlannerDraft,
   clearTripPlannerDraft,
+  getPlannerUserId,
   hydratePlannerPlaces,
   readTripPlannerDraft,
   restorePlannerMessages,
@@ -37,43 +38,119 @@ function TripPlannerPage({
 }) {
   const map = regionMap instanceof Map ? regionMap : EMPTY_REGION_MAP;
   const lookupRegion = id => map.get(Number(id));
-  const plannerDraftRef = useRef(readTripPlannerDraft());
+  const plannerUserId = getPlannerUserId(currentUser);
+  const plannerDraftRef = useRef(null);
   const persistReadyRef = useRef(false);
   const persistTimerRef = useRef(null);
   const messagesForPersistRef = useRef(null);
   const roadmapLocationsRef = useRef([]);
   const tripDurationRef = useRef(null);
-  const [initialChatMessages] = useState(() =>
-    restorePlannerMessages(plannerDraftRef.current?.messages),
-  );
-  const [roadmapLocations, setRoadmapLocations] = useState([]);
-  const [tripDuration, setTripDuration] = useState(null);
   const chatResetRef = useRef(null);
+  const chatNewRef = useRef(null);
+  const [chatSessionKey, setChatSessionKey] = useState(0);
   const [saveModalOpen, setSaveModalOpen] = useState(false);
 
+  const [roadmapLocations, setRoadmapLocations] = useState([]);
+  const [tripDuration, setTripDuration] = useState(null);
+
+  const chatInitialMessages = useMemo(() => {
+    if (!plannerUserId) return null;
+    const draft = readTripPlannerDraft(plannerUserId);
+    return restorePlannerMessages(draft?.messages);
+  }, [plannerUserId, chatSessionKey]);
+
+  const flushPersist = useCallback(() => {
+    if (!plannerUserId || !persistReadyRef.current) {
+      return;
+    }
+    const serializedPlaces = serializePlannerPlaces(roadmapLocationsRef.current);
+    const fallbackPlaces = plannerDraftRef.current?.placeEntries ?? [];
+    saveTripPlannerDraft(plannerUserId, {
+      placeEntries:
+        serializedPlaces.length > 0 ? serializedPlaces : fallbackPlaces,
+      tripDuration: tripDurationRef.current,
+      messages: serializePlannerMessages(messagesForPersistRef.current),
+    });
+    plannerDraftRef.current = readTripPlannerDraft(plannerUserId);
+  }, [plannerUserId]);
+
   const schedulePersist = useCallback(() => {
-    if (!persistReadyRef.current) {
+    if (!plannerUserId || !persistReadyRef.current) {
       return;
     }
     if (persistTimerRef.current) {
       clearTimeout(persistTimerRef.current);
     }
-    persistTimerRef.current = setTimeout(() => {
-      saveTripPlannerDraft({
-        placeEntries: serializePlannerPlaces(roadmapLocationsRef.current),
-        tripDuration: tripDurationRef.current,
-        messages: serializePlannerMessages(messagesForPersistRef.current),
-      });
-    }, 300);
-  }, []);
+    persistTimerRef.current = setTimeout(flushPersist, 300);
+  }, [plannerUserId, flushPersist]);
 
   const handleMessagesChange = useCallback(
     messages => {
       messagesForPersistRef.current = messages;
+      if (!persistReadyRef.current) {
+        return;
+      }
       schedulePersist();
     },
     [schedulePersist],
   );
+
+  useEffect(() => {
+    clearGuestPlannerDraft();
+    persistReadyRef.current = false;
+
+    if (!plannerUserId) {
+      plannerDraftRef.current = null;
+      setRoadmapLocations([]);
+      setTripDuration(null);
+      setChatSessionKey(k => k + 1);
+      return undefined;
+    }
+
+    const draft = readTripPlannerDraft(plannerUserId);
+    plannerDraftRef.current = draft;
+
+    if (draft?.placeEntries?.length) {
+      const hydrated = hydratePlannerPlaces(draft.placeEntries, EMPTY_REGION_MAP).map(
+        r => normalizeRegionMediaFields(r),
+      );
+      setRoadmapLocations(hydrated);
+    } else {
+      setRoadmapLocations([]);
+    }
+    setTripDuration(draft?.tripDuration ?? null);
+    setChatSessionKey(k => k + 1);
+
+    const t = setTimeout(() => {
+      persistReadyRef.current = true;
+      flushPersist();
+    }, 400);
+    return () => clearTimeout(t);
+  }, [plannerUserId, flushPersist]);
+
+  useEffect(() => {
+    if (!plannerUserId || map.size === 0) {
+      return;
+    }
+    const draft = plannerDraftRef.current;
+    if (!draft?.placeEntries?.length) {
+      return;
+    }
+    const hydrated = hydratePlannerPlaces(draft.placeEntries, map).map(r =>
+      normalizeRegionMediaFields(r),
+    );
+    if (hydrated.length === 0) {
+      return;
+    }
+    setRoadmapLocations(prev => {
+      if (prev.length === 0) {
+        return hydrated;
+      }
+      const prevIds = prev.map(l => l.id).join(',');
+      const nextIds = hydrated.map(l => l.id).join(',');
+      return prevIds === nextIds ? prev : hydrated;
+    });
+  }, [map, plannerUserId]);
 
   useEffect(() => {
     roadmapLocationsRef.current = roadmapLocations;
@@ -84,28 +161,6 @@ function TripPlannerPage({
     tripDurationRef.current = tripDuration;
     schedulePersist();
   }, [tripDuration, schedulePersist]);
-
-  useEffect(() => {
-    if (persistReadyRef.current) {
-      return;
-    }
-    const draft = plannerDraftRef.current;
-    if (!draft) {
-      persistReadyRef.current = true;
-      return;
-    }
-    if (map.size === 0) {
-      return;
-    }
-    const hydrated = hydratePlannerPlaces(draft.placeEntries, map);
-    if (hydrated.length > 0) {
-      setRoadmapLocations(hydrated);
-    }
-    if (draft.tripDuration) {
-      setTripDuration(draft.tripDuration);
-    }
-    persistReadyRef.current = true;
-  }, [map]);
 
   useEffect(
     () => () => {
@@ -368,9 +423,23 @@ function TripPlannerPage({
     setTripDuration(null);
     setSelectedLocation(null);
     setInsightLocation(null);
-    clearTripPlannerDraft();
+    if (plannerUserId) {
+      clearTripPlannerDraft(plannerUserId);
+    }
+    plannerDraftRef.current = null;
     chatResetRef.current?.();
   };
+
+  const handleNewChat = useCallback(() => {
+    setRoadmapLocations([]);
+    setTripDuration(null);
+    setSelectedLocation(null);
+    setInsightLocation(null);
+    chatNewRef.current?.();
+    if (plannerUserId && persistReadyRef.current) {
+      window.setTimeout(() => flushPersist(), 80);
+    }
+  }, [plannerUserId, flushPersist]);
 
   const handleTripMetaChange = meta => {
     if (meta?.duration) {
@@ -464,64 +533,42 @@ function TripPlannerPage({
         <div>
           <h2>여행 플래너</h2>
         </div>
+        {/* 장소가 없어도 자리를 유지해 레이아웃이 튀지 않게 한다. */}
         <div className="trip-planner-stats">
-          {tripDuration ? (
-            <span className="trip-planner-chip">
-              {tripDuration.nights}박 {tripDuration.days}일
-              {Number.isFinite(maxLocations)
-                ? ` · ${roadmapLocations.length}/${maxLocations}곳`
-                : ` · ${roadmapLocations.length}곳`}
-            </span>
-          ) : (
-            <span className="trip-planner-chip">
-              {roadmapLocations.length > 0
-                ? `${roadmapLocations.length}곳`
-                : '일정 없음'}
-            </span>
-          )}
-          {roadmapLocations.length > 0 ? (
-            <>
-              <button
-                type="button"
-                className="trip-planner-save-btn"
-                onClick={() => {
-                  if (!currentUser) {
-                    onRequireLogin?.();
-                    return;
-                  }
-                  setSaveModalOpen(true);
-                }}
-              >
-                마이페이지에 저장
-              </button>
-              <button
-                type="button"
-                className="trip-planner-clear-btn"
-                onClick={handleClearRoadmap}
-                title="일정 전체 삭제"
-              >
-                전체 삭제
-              </button>
-            </>
-          ) : null}
+          <button
+            type="button"
+            className="trip-planner-save-btn"
+            disabled={roadmapLocations.length === 0}
+            onClick={() => {
+              if (!currentUser) {
+                onRequireLogin?.();
+                return;
+              }
+              setSaveModalOpen(true);
+            }}
+          >
+            마이페이지에 저장
+          </button>
+          <button
+            type="button"
+            className="trip-planner-clear-btn"
+            disabled={roadmapLocations.length === 0}
+            onClick={handleClearRoadmap}
+            title="일정 전체 삭제"
+          >
+            전체 삭제
+          </button>
         </div>
       </div>
 
       <div className="trip-planner-main">
         <div className="trip-planner-left">
-          <TripPlaceSearch
-            regionMap={map}
-            currentLocationIds={roadmapLocations.map(l => l.id)}
-            maxLocations={maxLocations}
-            onAddPlace={handleAddPlaceToRoadmap}
-          />
-
           <div className="sroadmap-wrapper" id="roadmap-container">
             {roadmapLocations.length === 0 ? (
               <div className="sroadmap-empty">
-                <p>채팅이나 위 검색으로 여행 조건·장소를 넣어 보세요.</p>
+                <p>오른쪽 채팅으로 여행 조건과 장소를 넣어 보세요.</p>
                 <p className="sroadmap-empty-hint">
-                  예: &quot;부산 2박 3일, 친구랑 트렌디하게, 절은 빼고&quot;
+                  예: &quot;여수 1박 2일, 친구랑 바다 보면서 여유롭게&quot;
                 </p>
               </div>
             ) : (
@@ -549,6 +596,7 @@ function TripPlannerPage({
 
         <div className="trip-planner-right">
           <TripChatPanel
+            key={`${plannerUserId ?? 'guest'}-${chatSessionKey}`}
             onTripLocationsChange={handleTripLocationsChange}
             onTripLocationsReplaceAll={handleTripLocationsReplaceAll}
             onReplaceLocation={handleReplaceLocation}
@@ -565,7 +613,9 @@ function TripPlannerPage({
             tripDuration={tripDuration}
             onTripMetaChange={handleTripMetaChange}
             onResetRef={chatResetRef}
-            initialMessages={initialChatMessages}
+            onNewChatRef={chatNewRef}
+            onNewChat={handleNewChat}
+            initialMessages={chatInitialMessages}
             onMessagesChange={handleMessagesChange}
           />
         </div>

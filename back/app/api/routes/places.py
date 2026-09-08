@@ -4,8 +4,8 @@ from pydantic import BaseModel, Field
 from app.repositories import places_store
 from app.repositories.db import mysql_url_configured, session_scope
 from app.schemas import PlaceArticleResponse, PlaceImageItem, PlaceImagesResponse, PlaceTextItem, PlaceTextsResponse
-from app.services.article_service import get_or_create_article
-from app.services.naverBlog_crawling import crawl_naver_blog_for_place
+from app.modules.content.service import get_or_create_article
+from app.modules.content.crawler import crawl_naver_blog_for_place
 
 router = APIRouter(prefix="/api/places", tags=["places"])
 
@@ -79,7 +79,7 @@ def post_place_refresh(place_id: int, body: PlaceCrawlBody = PlaceCrawlBody()):
     """기존 크롤링 데이터(텍스트+이미지 DB 행)를 삭제하고 재크롤링. 2주~1달 주기 갱신용."""
     import shutil
 
-    from app.services.naverBlog_crawling import IMAGE_SAVE_ROOT
+    from app.modules.content.crawler import IMAGE_SAVE_ROOT
 
     if not mysql_url_configured():
         raise HTTPException(status_code=503, detail="MySQL(MYSQL_URL)이 설정되지 않았습니다.")

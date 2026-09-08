@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { createPortal, flushSync } from 'react-dom';
 import ComparisonModal from './ComparisonModal';
 import TripVisualModal from './TripVisualModal';
+import LineIcon from './ui/LineIcon';
 import {
   buildCurrentSchedulePayload,
   getMaxLocationsByDuration,
@@ -171,7 +172,7 @@ const VISUAL_TITLE_MAP = {
  */
 const INITIAL_MESSAGE = {
   role: 'assistant',
-  text: '어떤 여행을 계획하고 계신가요? 예: "서울 1일 카페 여행", "부산 2박 3일"',
+  text: '어떤 여행을 계획하고 계신가요?',
 };
 
 function buildRecentMessagesPayload(messages) {
@@ -196,6 +197,8 @@ function TripChatPanelInner({
   tripDuration: tripDurationProp = null,
   onTripMetaChange,
   onResetRef,
+  onNewChatRef,
+  onNewChat,
   initialMessages = null,
   onMessagesChange,
 }) {
@@ -229,6 +232,18 @@ function TripChatPanelInner({
       };
     }
   }, [onResetRef, onTripMetaChange, onMessagesChange]);
+
+  useEffect(() => {
+    if (onNewChatRef) {
+      onNewChatRef.current = () => {
+        const fresh = [INITIAL_MESSAGE];
+        setMessages(fresh);
+        setLastAction(null);
+        setVisualPopup(null);
+        onMessagesChange?.(fresh);
+      };
+    }
+  }, [onNewChatRef, onMessagesChange]);
 
   useEffect(() => {
     onMessagesChange?.(messages);
@@ -622,13 +637,48 @@ function TripChatPanelInner({
     setIsLoading(false);
   }
 
+  function handleNewChatClick() {
+    if (isLoading) {
+      return;
+    }
+    const hasChatHistory = messages.some(
+      m =>
+        m.role === 'user' ||
+        (m.role === 'assistant' && m.text !== INITIAL_MESSAGE.text),
+    );
+    const hasPlaces = (currentLocations?.length ?? 0) > 0;
+    if (
+      (hasChatHistory || hasPlaces) &&
+      !window.confirm(
+        '채팅과 로드맵 일정을 모두 비우고 새로 시작할까요?',
+      )
+    ) {
+      return;
+    }
+    onNewChat?.();
+  }
+
   return (
     <section className="trip-chat-panel">
       <div className="trip-chat-title-wrap">
-        <h2 className="trip-chat-title">로드맵 편집 챗봇</h2>
-        <div className="trip-chat-help-btn">
-          ?
-          <div className="trip-chat-help-tooltip">{HELP_TEXT}</div>
+        <div className="trip-chat-title-row">
+          <div className="trip-chat-title-group">
+            <h2 className="trip-chat-title">로드맵 편집 챗봇</h2>
+            <div className="trip-chat-help-btn" aria-label="도움말">
+              ?
+              <div className="trip-chat-help-tooltip">{HELP_TEXT}</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="trip-chat-new-btn"
+            onClick={handleNewChatClick}
+            disabled={isLoading}
+            title="새 채팅"
+            aria-label="새 채팅"
+          >
+            <LineIcon name="refresh" className="trip-chat-new-icon" />
+          </button>
         </div>
       </div>
 
@@ -748,8 +798,8 @@ function TripChatPanelInner({
           type="text"
           placeholder={
             tripDuration
-              ? '자유롭게 말씀해 주세요 (예: 2일차만 맛집 위주, 절 빼고 여유롭게)'
-              : '예: 부산 2박 3일, 친구랑 맛집·카페 위주'
+              ? '자유롭게 말씀해 주세요 (예: 2일차는 맛집 위주로 여유롭게)'
+              : '예: 담양 1박 2일, 부모님이랑 조용한 곳 위주로'
           }
           value={input}
           onChange={event => setInput(event.target.value)}
@@ -765,6 +815,7 @@ function TripChatPanelInner({
 
 export default function TripChatPanel({
   onResetRef,
+  onNewChatRef,
   onTripLocationsReplaceAll,
   ...props
 }) {
@@ -772,6 +823,7 @@ export default function TripChatPanel({
     <TripChatPanelInner
       {...props}
       onResetRef={onResetRef}
+      onNewChatRef={onNewChatRef}
       onTripLocationsReplaceAll={onTripLocationsReplaceAll}
     />
   );

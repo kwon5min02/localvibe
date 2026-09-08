@@ -144,7 +144,7 @@ def _sanitize_image_url(raw_url: str) -> str:
 
     if not image_url.startswith("http"):
         return ""
-    from app.services.media_utils import sanitize_display_image_url
+    from app.shared.media import sanitize_display_image_url
 
     return sanitize_display_image_url(image_url)
 
@@ -634,7 +634,7 @@ def _extract_region_from_address(address: str) -> str:
 
 
 def _is_fallback_image_url(url: str) -> bool:
-    from app.services.media_utils import is_placeholder_image_url
+    from app.shared.media import is_placeholder_image_url
 
     return is_placeholder_image_url(url)
 

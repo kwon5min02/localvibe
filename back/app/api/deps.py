@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.repositories.db import mysql_url_configured, session_scope
-from app.services.auth_service import decode_access_token
+from app.modules.auth.service import decode_access_token
 
 _bearer = HTTPBearer(auto_error=False)
 

@@ -12,7 +12,7 @@ from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, String,
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.repositories.db import Base
-from app.services.media_utils import sanitize_display_image_url
+from app.shared.media import sanitize_display_image_url
 from app.utils.province_names import canonical_province, province_tokens_for_filter, special_province_canon_for_locality
 from app.utils.sidebar_location import address_tokens_for_locality, place_row_matches_sidebar_locality
 
@@ -177,7 +177,7 @@ def place_has_real_display_image(session, place_id: int) -> bool:
     return bool(sanitize_display_image_url(_kto_image_url_from_insight(p.insight_json)))
 
 
-def find_place_ids_by_location_locality(session, locality: str, *, limit: int = 96) -> list[int]:
+def find_place_ids_by_location_locality(session, locality: str, *, limit: int = 500) -> list[int]:
     """
     사이드바 지역 필터: region/province/address만 사용 (name 제외).
     """

@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { resolveBackendMediaUrl } from '../../utils/apiMediaUrl';
 
-export default function ImageGallery({ images = [] }) {
+export default function ImageGallery({ images: rawImages = [] }) {
   const [lightbox, setLightbox] = useState(null);
+
+  // src가 빈 이미지는 아예 렌더하지 않습니다(빈 src는 현재 페이지를 다시 요청함).
+  const images = rawImages.filter(img => resolveBackendMediaUrl(img?.imageUrl));
 
   if (!images.length) {
     return <p className="ui-empty">이미지를 찾을 수 없어요.</p>;

@@ -25,6 +25,11 @@ export function resolveBackendMediaUrl(url, apiBaseUrl) {
   if (u.startsWith('//')) {
     return `https:${u}`;
   }
+  // 이미지 크롤링을 더 이상 하지 않으므로 백엔드 /static 경로는 항상 비어 있습니다.
+  // 그대로 넘기면 매번 404가 나므로 여기서 버리고 각 호출부의 placeholder를 쓰게 합니다.
+  if (u.startsWith('/static/')) {
+    return '';
+  }
   const base = String(apiBaseUrl ?? getApiBaseUrl()).replace(/\/$/, '');
   if (u.startsWith('/') && base) {
     return `${base}${u}`;

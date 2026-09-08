@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint src",
+    "arch-check": "depcruise src --config .dependency-cruiser.json --output-type err",
+    "verify": "npm run lint && npm run arch-check"
   },
   "dependencies": {
     "@react-oauth/google": "^0.12.2",
@@ -16,7 +19,14 @@
     "react-router-dom": "^7.13.2"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@vitejs/plugin-react": "^4.3.1",
+    "dependency-cruiser": "^18.2.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-boundaries": "^7.2.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
     "vite": "^5.4.21"
   }
 }

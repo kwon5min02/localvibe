@@ -114,7 +114,7 @@ export default function ComparisonModal({
             type="button"
             className="comparison-modal-back"
             onClick={onClose}
-            aria-label="닫기"
+            aria-label="뒤로"
           >
             ←
           </button>
@@ -124,14 +124,6 @@ export default function ComparisonModal({
             </h2>
             <p className="comparison-modal-subtitle">{title}</p>
           </div>
-          <button
-            type="button"
-            className="comparison-modal-close"
-            onClick={onClose}
-            aria-label="닫기"
-          >
-            ✕
-          </button>
         </header>
 
         <div className="comparison-modal-body">
@@ -171,9 +163,6 @@ export default function ComparisonModal({
 
         <footer className="comparison-modal-footer">
           <p>채팅에서 다른 장소도 vs로 비교해 볼 수 있어요.</p>
-          <button type="button" className="comparison-modal-done" onClick={onClose}>
-            닫기
-          </button>
         </footer>
       </div>
     </div>,

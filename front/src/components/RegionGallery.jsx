@@ -1,103 +1,77 @@
-import { useState } from "react";
-import { resolveBackendMediaUrl } from "../utils/apiMediaUrl";
-import { CARD_PLACEHOLDER_SVG, displayImageSrc } from "../utils/placeholderImage";
+import { motion } from 'framer-motion';
+import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
+import {
+  CARD_PLACEHOLDER_SVG,
+  displayImageSrc,
+} from '../utils/placeholderImage';
 const SUMMARY_FALLBACK = '광주·전남 추천 스팟 정보를 확인해보세요.';
 
-export default function RegionGallery({ regions, onSelect, scrappedIds = [], onToggleScrap, onAddToTrip }) {
-  const [justScrapped, setJustScrapped] = useState(null);
-
-  const normalizeSummary = (summary) => {
+export default function RegionGallery({ regions, onSelect }) {
+  const normalizeSummary = summary => {
     const text = String(summary || '').trim();
     if (!text) return SUMMARY_FALLBACK;
-    return text.length > 44 ? `${text.slice(0, 44)}...` : text;
-  };
-
-  const inferThemeTag = (region) => {
-    const text = `${region?.name || ''} ${region?.summary || ''}`;
-    if (/카페|커피|브런치|디저트/.test(text)) return '카페';
-    if (/맛집|식당|음식|국밥|고기/.test(text)) return '맛집';
-    if (/해변|바다|섬|해수욕/.test(text)) return '해변';
-    if (/산|등산|트레킹|숲|공원/.test(text)) return '자연';
-    if (/박물관|전시|갤러리|역사/.test(text)) return '문화';
-    return '관광';
-  };
-
-  const inferRegionTag = (region) => {
-    const regionText = String(region?.region || '').trim();
-    if (regionText) return regionText;
-    const provinceText = String(region?.province || '').trim();
-    if (provinceText) return provinceText;
-    const address = String(region?.address || '').trim();
-    if (address) return address.split(/\s+/)[0] || '지역';
-    return '지역';
-  };
-
-  const handleToggleScrap = (e, regionId) => {
-    e.stopPropagation();
-    setJustScrapped(regionId);
-    setTimeout(() => setJustScrapped(null), 400);
-    onToggleScrap?.(regionId);
-  };
-
-  const handleAddToTrip = (e, region) => {
-    e.stopPropagation();
-    onAddToTrip?.(region);
+    return text;
   };
 
   return (
     <section className="gallery-scroll-area">
       <div className="region-grid">
-        {regions.map((region) => {
-          const isScrapped = scrappedIds.includes(region.id);
-          const isJustScrapped = justScrapped === region.id;
+        {regions.map(region => {
           return (
-            <article key={region.id} className="region-card">
+            <motion.article
+              key={region.id}
+              className="region-card"
+              initial={{ opacity: 0, y: 24 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.15 }}
+              transition={{
+                duration: 0.55,
+                ease: 'easeOut',
+              }}
+            >
               <div
                 className="region-preview"
                 role="button"
                 tabIndex={0}
                 onClick={() => onSelect(region)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(region); } }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelect(region);
+                  }
+                }}
               >
-                <button
-                  type="button"
-                  className={`card-heart-btn${isScrapped ? ' active' : ''}${isJustScrapped ? ' just-popped' : ''}`}
-                  onClick={(e) => handleToggleScrap(e, region.id)}
-                  aria-label={isScrapped ? "스크랩 해제" : "스크랩"}
-                >
-                  {isScrapped ? '♥' : '♡'}
-                </button>
-
                 <img
                   src={displayImageSrc(region.imageUrl, resolveBackendMediaUrl)}
                   alt={region.name}
                   className="region-image"
                   loading="lazy"
                   referrerPolicy="no-referrer"
-                  onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = CARD_PLACEHOLDER_SVG; }}
+                  onError={e => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = CARD_PLACEHOLDER_SVG;
+                  }}
                 />
-
-                <div className="region-overlay">
-                  <span className="region-overlay-name">{region.name}</span>
-                  <p className="region-overlay-summary">{normalizeSummary(region.summary)}</p>
-                  <div className="region-overlay-footer">
-                    <div className="region-overlay-tags">
-                      <span className="region-overlay-tag">{inferThemeTag(region)}</span>
-                      <span className="region-overlay-tag">{inferRegionTag(region)}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="card-add-btn"
-                      aria-label="여행에 담기"
-                      onClick={(e) => handleAddToTrip(e, region)}
-                      title="여행에 담기"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
               </div>
-            </article>
+              <div className="region-card-content">
+                {(region.address || region.region) && (
+                  <span className="region-card-place">
+                    {region.address || region.region}
+                  </span>
+                )}
+                <span className="region-card-name">{region.name}</span>
+                <p className="region-card-summary">
+                  {normalizeSummary(region.summary)}
+                </p>
+                <button
+                  type="button"
+                  className="region-card-read-more"
+                  onClick={() => onSelect(region)}
+                >
+                  Read More
+                </button>
+              </div>
+            </motion.article>
           );
         })}
       </div>

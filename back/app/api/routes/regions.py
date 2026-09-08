@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query
 
 from app.schemas import RegionInsightResponse, RegionKtoImagesResponse, RegionListResponse
-from app.services import (
+from app.modules.regions.service import (
     get_region_insight,
     list_region_kto_image_urls,
     list_regions,

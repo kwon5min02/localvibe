@@ -1,0 +1,28 @@
+[importlinter]
+root_package = app
+include_external_packages = True
+
+[importlinter:contract:no-cross-module-import]
+name = 모듈간 직접 cross-import 금지 (chat/content→search 허용)
+type = forbidden
+source_modules =
+    app.modules.auth
+    app.modules.regions
+    app.modules.user_data
+    app.modules.data
+forbidden_modules =
+    app.modules.auth
+    app.modules.regions
+    app.modules.search
+    app.modules.chat
+    app.modules.content
+    app.modules.user_data
+    app.modules.data
+
+[importlinter:contract:routes-use-modules]
+name = routes는 반드시 modules/ 또는 repositories/ 또는 schemas/에서 import
+type = forbidden
+source_modules =
+    app.api.routes
+forbidden_modules =
+    app.services
