@@ -309,3 +309,77 @@
   font-size: 12px;
   color: var(--white);
 }
+
+/* ── 다녀온 사람들의 기록 ── */
+/* 사이드바의 커뮤니티 글 미리보기. 장소 인사이트 카드와 같은 결로 맞추고,
+   섹션 간 간격은 .rm-side의 gap이 맡는다. */
+
+.rm-community-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* 사이드바가 300px라 제목과 메타를 한 줄에 두면 제목이 거의 다 잘린다 */
+.rm-community-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 10px;
+  /* 바로 위 장소 인사이트 카드(.rm-insight)와 같은 배경·테두리로 맞춘다 */
+  background: var(--gray-50);
+  border: 1px solid var(--gray-100);
+  border-radius: 8px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--tr-fast);
+}
+
+.rm-community-item:hover {
+  background: var(--gray-100);
+}
+
+/* 인사이트 카드 목록(.rm-insight-list)과 같은 간격 */
+.rm-community-list li + li {
+  margin-top: 8px;
+}
+
+.rm-community-title {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--gray-800);
+}
+
+.rm-community-meta {
+  font-size: 11.5px;
+  color: var(--gray-400);
+}
+
+.rm-community-dot {
+  margin: 0 5px;
+}
+
+.rm-community-more {
+  display: block;
+  margin-top: 12px;
+  padding: 0 6px;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--gray-500);
+  cursor: pointer;
+  transition: color var(--tr-fast);
+}
+
+.rm-community-more:hover {
+  color: var(--black);
+}

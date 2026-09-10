@@ -1,11 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.deps import AuthUser, get_current_user
-from app.repositories import places_store, scraps_store, trips_store
+from app.repositories import community_store, places_store, scraps_store, trips_store
 from app.repositories.db import session_scope
 from app.repositories.trips_store import UserTrip
 from app.schemas import (
+    MyCommentItem,
+    MyCommentListResponse,
+    PostListResponse,
     Region,
+    SavedPostItem,
+    SavedPostListResponse,
     ScrapListResponse,
     ScrapSyncRequest,
     ScrapToggleResponse,
@@ -195,3 +200,60 @@ def remove_place_from_my_trip(
         trips_store.remove_place_from_trip(session, user.user_id, trip_id, place_id)
         trip = trips_store.get_trip_for_user(session, user.user_id, trip_id)
         return _trip_response(session, trip)
+
+
+# ── 커뮤니티 내 활동 ──────────────────────────────────────────────────────────
+
+@router.get("/community/posts", response_model=PostListResponse)
+def list_my_community_posts(user: AuthUser = Depends(get_current_user)):
+    from app.api.routes.community import build_summaries
+
+    with session_scope() as session:
+        posts = community_store.list_posts_by_user(session, user.user_id)
+        return PostListResponse(posts=build_summaries(session, posts, user))
+
+
+@router.get("/community/comments", response_model=MyCommentListResponse)
+def list_my_community_comments(user: AuthUser = Depends(get_current_user)):
+    with session_scope() as session:
+        rows = community_store.list_comments_by_user(session, user.user_id)
+        items = []
+        for row in rows:
+            post = community_store.get_post(session, int(row.post_id))
+            if not post:
+                continue
+            items.append(
+                MyCommentItem(
+                    id=int(row.comment_id),
+                    postId=int(row.post_id),
+                    postTitle=post.title,
+                    body=row.body,
+                    createdAt=row.created_at.isoformat() if row.created_at else None,
+                    anonymous=bool(row.is_anonymous),
+                    likes=int(row.likes_count or 0),
+                )
+            )
+        return MyCommentListResponse(comments=items)
+
+
+@router.get("/community/saves", response_model=SavedPostListResponse)
+def list_my_saved_posts(user: AuthUser = Depends(get_current_user)):
+    from app.api.routes.community import build_summaries
+
+    with session_scope() as session:
+        rows = community_store.list_saved_posts(session, user.user_id)
+        posts = [post for post, _ in rows]
+        saved_at_by_id = {int(post.post_id): saved_at for post, saved_at in rows}
+        summaries = build_summaries(session, posts, user)
+        items = [
+            SavedPostItem(
+                **summary.model_dump(),
+                savedAt=(
+                    saved_at_by_id[summary.id].isoformat()
+                    if saved_at_by_id.get(summary.id)
+                    else None
+                ),
+            )
+            for summary in summaries
+        ]
+        return SavedPostListResponse(posts=items)

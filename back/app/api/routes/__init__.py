@@ -1,5 +1,6 @@
 from .auth import router as auth_router
 from .chat import router as chat_router
+from .community import router as community_router
 from .geocode import router as geocode_router
 from .health import router as health_router
 from .me import router as me_router
@@ -11,6 +12,7 @@ from .visual import router as visual_router
 __all__ = [
     "auth_router",
     "chat_router",
+    "community_router",
     "geocode_router",
     "health_router",
     "me_router",

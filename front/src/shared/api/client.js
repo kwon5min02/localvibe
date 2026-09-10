@@ -31,10 +31,13 @@ async function readBody(res) {
 export async function apiFetch(path, options = {}) {
   const token = getAccessToken();
   if (!token) throw new Error('not_logged_in');
+  // FormData는 브라우저가 boundary까지 넣은 Content-Type을 만들어야 하므로 직접 지정하지 않는다.
+  const isFormData =
+    typeof FormData !== 'undefined' && options.body instanceof FormData;
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       Authorization: `Bearer ${token}`,
       ...(options.headers || {}),
     },
@@ -47,6 +50,24 @@ export async function apiFetch(path, options = {}) {
 /** 인증 불필요 공개 API 호출. */
 export async function publicFetch(path, options = {}) {
   const res = await fetch(`${API_BASE_URL}${path}`, options);
+  if (!res.ok) throw new Error(await parseError(res));
+  return readBody(res);
+}
+
+/**
+ * 비로그인도 볼 수 있지만, 로그인했다면 사용자별 상태까지 받아야 하는 조회용.
+ * (예: 커뮤니티 목록의 saved/myVote/liked)
+ * 토큰이 없으면 그냥 공개 호출로 나가고 'not_logged_in'을 던지지 않는다.
+ */
+export async function optionalAuthFetch(path, options = {}) {
+  const token = getAccessToken();
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
   if (!res.ok) throw new Error(await parseError(res));
   return readBody(res);
 }

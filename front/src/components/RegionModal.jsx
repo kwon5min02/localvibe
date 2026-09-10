@@ -3,6 +3,12 @@ import KakaoMap from './KakaoMap';
 import LineIcon from './ui/LineIcon';
 import { resolveBackendMediaUrl } from '../utils/apiMediaUrl';
 import { buildArticleDisplayData } from '../utils/articleBlocks';
+import { recordPlaceView } from '../features/places/placesApi';
+import { fetchPosts } from '../features/community/communityApi';
+import { timeAgo } from '../utils/timeAgo';
+
+/** 장소 상세에 미리 보여줄 커뮤니티 글 수. 소개 글이 주인공이라 짧게 둔다. */
+const COMMUNITY_PREVIEW_MAX = 3;
 
 /* ── 인사이트 정규화 ── */
 function normalizeInsightValues(values = []) {
@@ -362,6 +368,7 @@ export default function RegionModal({
   scrappedIds = [],
   onToggleScrap,
   onAddToTrip,
+  onGoCommunity,
 }) {
   // Esc로 닫기 + 열려 있는 동안 뒤 배경 스크롤 잠금
   useEffect(() => {
@@ -378,6 +385,34 @@ export default function RegionModal({
     };
   }, [region, onClose]);
 
+  // 열람 기록 — '지금 많이 찾는 장소' 집계용. 같은 사람이 같은 날 여러 번 열어도
+  // 서버가 하루 1회만 센다.
+  const viewedId = region?.id;
+  useEffect(() => {
+    if (viewedId) recordPlaceView(viewedId);
+  }, [viewedId]);
+
+  // 이 장소에 달린 커뮤니티 글. 글쓰기에서 자동완성으로 고른 것만 잡힌다.
+  const [placePosts, setPlacePosts] = useState([]);
+  useEffect(() => {
+    if (!viewedId) {
+      setPlacePosts([]);
+      return undefined;
+    }
+    let cancelled = false;
+    fetchPosts({ placeId: viewedId, sort: 'new', limit: COMMUNITY_PREVIEW_MAX })
+      .then(({ posts }) => {
+        if (!cancelled) setPlacePosts(posts);
+      })
+      .catch(() => {
+        // 소개 글이 주인공인 화면이라, 실패하면 이 구역만 조용히 접는다.
+        if (!cancelled) setPlacePosts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [viewedId]);
+
   if (!region) return null;
 
   const cards = toCardItems(region);
@@ -393,7 +428,9 @@ export default function RegionModal({
   ].filter(Boolean);
 
   const articleData = buildArticleDisplayData(article, region);
-  const hasSideContent = cards.length > 0 || region.address || region.latitude;
+  const showPlacePosts = Boolean(onGoCommunity) && placePosts.length > 0;
+  const hasSideContent =
+    cards.length > 0 || region.address || region.latitude || showPlacePosts;
 
   return (
     <div className="rm-backdrop" role="presentation" onClick={onClose}>
@@ -467,6 +504,7 @@ export default function RegionModal({
             ) : (
               <ArticleBody blocks={articleData.body} />
             )}
+
           </div>
 
           {hasSideContent && (
@@ -488,6 +526,40 @@ export default function RegionModal({
                       </div>
                     ))}
                   </div>
+                </section>
+              )}
+
+              {/* 다녀온 사람들의 기록 — 글이 없으면 구역째 감춘다. 빈 목록이
+                  사이드바 자리를 차지하게 두지 않는다.
+                  onGoCommunity가 없는 곳(플래너)에서는 눌러도 갈 데가 없으므로 감춘다. */}
+              {showPlacePosts && (
+                <section className="rm-community">
+                  <h3 className="rm-section-title">다녀온 사람들의 기록</h3>
+                  <ul className="rm-community-list">
+                    {placePosts.map(p => (
+                      <li key={p.id}>
+                        <button
+                          type="button"
+                          className="rm-community-item"
+                          onClick={() => onGoCommunity?.(p.id)}
+                        >
+                          <span className="rm-community-title">{p.title}</span>
+                          <span className="rm-community-meta">
+                            {timeAgo(p.createdAt)}
+                            <span className="rm-community-dot">·</span>
+                            댓글 {p.comments}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    className="rm-community-more"
+                    onClick={() => onGoCommunity?.(null, { q: region.name })}
+                  >
+                    커뮤니티에서 더 보기 →
+                  </button>
                 </section>
               )}
 

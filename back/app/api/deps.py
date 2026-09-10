@@ -21,6 +21,33 @@ class AuthUser:
     name: str
 
 
+def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+) -> AuthUser | None:
+    """비로그인도 볼 수 있는 화면용 — 토큰이 없거나 유효하지 않으면 None."""
+    if not credentials or not credentials.credentials:
+        return None
+    if not mysql_url_configured():
+        return None
+    try:
+        claims = decode_access_token(credentials.credentials)
+    except Exception:
+        return None
+
+    from app.repositories import users_store
+
+    with session_scope() as session:
+        user = users_store.get_user_by_google_id(session, claims.google_sub)
+        if not user:
+            return None
+        return AuthUser(
+            user_id=int(user.user_id),
+            google_sub=claims.google_sub,
+            email=str(user.email or claims.email),
+            name=str(user.name or claims.name),
+        )
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> AuthUser:

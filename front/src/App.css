@@ -2,7 +2,9 @@
    LocalVibe — App.css (모노크롬 C 테마)
    ============================================= */
 
-@import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap');
+/* Pretendard는 구글 폰트에 없어 fonts.googleapis.com 요청이 400으로 실패했습니다.
+   공식 배포처(jsDelivr)의 동적 서브셋을 씁니다 — 한글은 필요한 글자만 내려받습니다. */
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.css');
 
 :root {
   --black: #111111;
@@ -630,6 +632,19 @@ body {
   font-size: 12px;
   font-weight: 600;
   color: var(--gray-500);
+}
+
+/* 따봉 아이콘과 숫자를 한 덩어리로 — 커뮤니티 액션 줄과 같은 간격 */
+.mypage-activity-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mypage-activity-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
 }
 
 .mypage-empty {

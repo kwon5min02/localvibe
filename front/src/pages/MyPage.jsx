@@ -11,12 +11,13 @@ import {
 } from '../utils/tripPlaceSearch';
 import Avatar from '../components/ui/Avatar';
 import LineIcon from '../components/ui/LineIcon';
+import { COMMUNITY_BOARDS } from '../data/communityConstants';
+import { timeAgo } from '../utils/timeAgo';
 import {
-  COMMUNITY_BOARDS,
-  COMMUNITY_MY_COMMENTS,
-  COMMUNITY_MY_POSTS,
-  COMMUNITY_SAVED_POSTS,
-} from '../data/communityMock';
+  fetchMyComments,
+  fetchMyPosts,
+  fetchMySavedPosts,
+} from '../features/community/communityApi';
 
 const boardName = id =>
   COMMUNITY_BOARDS.find(b => b.id === id)?.name || '전체';
@@ -48,6 +49,39 @@ export default function MyPage({
   const [editingTripId, setEditingTripId] = useState(null);
   const [menuTripId, setMenuTripId] = useState(null);
   const [editingName, setEditingName] = useState('');
+  // 커뮤니티 내 활동 — 로그인했을 때만 서버에서 가져옵니다.
+  const [myPosts, setMyPosts] = useState([]);
+  const [myComments, setMyComments] = useState([]);
+  const [savedPosts, setSavedPosts] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setMyPosts([]);
+      setMyComments([]);
+      setSavedPosts([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setActivityLoading(true);
+    Promise.all([
+      fetchMyPosts().catch(() => []),
+      fetchMyComments().catch(() => []),
+      fetchMySavedPosts().catch(() => []),
+    ])
+      .then(([posts, comments, saves]) => {
+        if (cancelled) return;
+        setMyPosts(posts);
+        setMyComments(comments);
+        setSavedPosts(saves);
+      })
+      .finally(() => {
+        if (!cancelled) setActivityLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn]);
   // 드래그로 순서 바꾸기 (수정 모드에서만)
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -209,15 +243,15 @@ export default function MyPage({
           </div>
           <div>
             <dt>작성글</dt>
-            <dd>{COMMUNITY_MY_POSTS.length}</dd>
+            <dd>{myPosts.length}</dd>
           </div>
           <div>
             <dt>저장글</dt>
-            <dd>{COMMUNITY_SAVED_POSTS.length}</dd>
+            <dd>{savedPosts.length}</dd>
           </div>
           <div>
             <dt>댓글</dt>
-            <dd>{COMMUNITY_MY_COMMENTS.length}</dd>
+            <dd>{myComments.length}</dd>
           </div>
         </dl>
       </header>
@@ -267,7 +301,7 @@ export default function MyPage({
           <div className="mypage-empty">
             <p>저장한 글은 로그인 후 확인할 수 있어요.</p>
           </div>
-        ) : COMMUNITY_SAVED_POSTS.length === 0 ? (
+        ) : savedPosts.length === 0 ? (
           <div className="mypage-empty">
             <p style={{ margin: 0 }}>아직 저장한 글이 없어요.</p>
             <p style={{ margin: '6px 0 0', fontSize: 12, color: '#aaa' }}>
@@ -276,7 +310,7 @@ export default function MyPage({
           </div>
         ) : (
           <ul className="mypage-activity-list">
-            {COMMUNITY_SAVED_POSTS.map(post => (
+            {savedPosts.map(post => (
               <li key={post.id}>
                 <button
                   type="button"
@@ -288,15 +322,22 @@ export default function MyPage({
                       {boardName(post.boardId)}
                     </span>
                     <span className="mypage-activity-sep">·</span>
-                    <span>u/{post.author}</span>
+                    <span>{post.anonymous ? '익명' : `u/${post.author}`}</span>
                     <span className="mypage-activity-sep">·</span>
-                    <span>{post.createdAt}</span>
-                    <span className="mypage-activity-tag">{post.savedAt}</span>
+                    <span>{timeAgo(post.createdAt)}</span>
+                    {post.savedAt && (
+                      <span className="mypage-activity-tag">
+                        {timeAgo(post.savedAt)} 저장
+                      </span>
+                    )}
                   </div>
                   <p className="mypage-activity-title">{post.title}</p>
                   <p className="mypage-activity-body">{post.body}</p>
                   <div className="mypage-activity-stats">
-                    <span>▲ {post.votes}</span>
+                    <span className="mypage-activity-stat">
+                      <LineIcon name="thumbUp" className="mypage-activity-icon" />
+                      {post.votes}
+                    </span>
                     <span className="mypage-activity-sep">|</span>
                     <span>댓글 {post.comments}</span>
                   </div>
@@ -313,7 +354,7 @@ export default function MyPage({
           <div className="mypage-empty">
             <p>작성한 글은 로그인 후 확인할 수 있어요.</p>
           </div>
-        ) : COMMUNITY_MY_POSTS.length === 0 ? (
+        ) : myPosts.length === 0 ? (
           <div className="mypage-empty">
             <p style={{ margin: 0 }}>아직 작성한 글이 없어요.</p>
             <p style={{ margin: '6px 0 0', fontSize: 12, color: '#aaa' }}>
@@ -322,7 +363,7 @@ export default function MyPage({
           </div>
         ) : (
           <ul className="mypage-activity-list">
-            {COMMUNITY_MY_POSTS.map(post => (
+            {myPosts.map(post => (
               <li key={post.id}>
                 <button
                   type="button"
@@ -334,7 +375,7 @@ export default function MyPage({
                       {boardName(post.boardId)}
                     </span>
                     <span className="mypage-activity-sep">·</span>
-                    <span>{post.createdAt}</span>
+                    <span>{timeAgo(post.createdAt)}</span>
                     {post.place && (
                       <>
                         <span className="mypage-activity-sep">|</span>
@@ -348,7 +389,10 @@ export default function MyPage({
                   <p className="mypage-activity-title">{post.title}</p>
                   <p className="mypage-activity-body">{post.body}</p>
                   <div className="mypage-activity-stats">
-                    <span>▲ {post.votes}</span>
+                    <span className="mypage-activity-stat">
+                      <LineIcon name="thumbUp" className="mypage-activity-icon" />
+                      {post.votes}
+                    </span>
                     <span className="mypage-activity-sep">|</span>
                     <span>댓글 {post.comments}</span>
                   </div>
@@ -365,13 +409,13 @@ export default function MyPage({
           <div className="mypage-empty">
             <p>작성한 댓글은 로그인 후 확인할 수 있어요.</p>
           </div>
-        ) : COMMUNITY_MY_COMMENTS.length === 0 ? (
+        ) : myComments.length === 0 ? (
           <div className="mypage-empty">
             <p style={{ margin: 0 }}>아직 작성한 댓글이 없어요.</p>
           </div>
         ) : (
           <ul className="mypage-activity-list">
-            {COMMUNITY_MY_COMMENTS.map(comment => (
+            {myComments.map(comment => (
               <li key={comment.id}>
                 <button
                   type="button"
@@ -379,7 +423,7 @@ export default function MyPage({
                   onClick={() => onGoCommunity?.(comment.postId)}
                 >
                   <div className="mypage-activity-meta">
-                    <span>{comment.createdAt}</span>
+                    <span>{timeAgo(comment.createdAt)}</span>
                     {comment.anonymous && (
                       <span className="mypage-activity-tag">익명</span>
                     )}
@@ -391,7 +435,10 @@ export default function MyPage({
                     원글 · {comment.postTitle}
                   </p>
                   <div className="mypage-activity-stats">
-                    <span>▲ {comment.votes}</span>
+                    <span className="mypage-activity-stat">
+                      <LineIcon name="thumbUp" className="mypage-activity-icon" />
+                      {comment.likes}
+                    </span>
                   </div>
                 </button>
               </li>

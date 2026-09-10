@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import logging
 import random
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Optional
 
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func, or_, select
+from sqlalchemy import BigInteger, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, case, func, or_, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.repositories.db import Base
@@ -230,6 +230,40 @@ def find_place_ids_for_locality_hints(session, keywords: list[str], *, limit: in
     stmt = select(Place.place_id).where(or_(*conds)).distinct().limit(limit)
     rows = session.execute(stmt).scalars().all()
     return [int(r) for r in rows]
+
+
+def search_places_by_name(session, query: str, *, limit: int = 8) -> list[dict[str, Any]]:
+    """장소 이름 자동완성용 — 이름/지역/주소 부분 일치, 이름이 먼저 걸린 것을 위로."""
+    q = str(query or "").strip()
+    if len(q) < 1:
+        return []
+    like = f"%{q}%"
+    starts = f"{q}%"
+    stmt = (
+        select(Place.place_id, Place.name, Place.region, Place.address)
+        .where(
+            or_(
+                Place.name.like(like),
+                Place.region.like(like),
+                Place.address.like(like),
+            )
+        )
+        # 이름이 검색어로 시작 → 이름에 포함 → 그 외 순
+        .order_by(
+            case((Place.name.like(starts), 0), (Place.name.like(like), 1), else_=2),
+            func.char_length(Place.name),
+        )
+        .limit(limit)
+    )
+    return [
+        {
+            "id": int(pid),
+            "name": str(name or ""),
+            "region": str(region or ""),
+            "address": str(address or ""),
+        }
+        for pid, name, region, address in session.execute(stmt).all()
+    ]
 
 
 def get_as_region_dict(session, place_id: int) -> dict[str, Any] | None:
@@ -661,3 +695,55 @@ def clear_crawled_data_for_place(session, place_id: int) -> dict[str, int]:
         "deleted_texts": txt_result.rowcount,
         "deleted_images": img_result.rowcount,
     }
+
+
+# ── 장소 열람 기록 ─────────────────────────────────────────────────────────────
+
+class PlaceView(Base):
+    """장소 상세를 연 기록. '지금 많이 찾는 장소' 집계에 씁니다.
+
+    커뮤니티 글 조회수(community_post_views)는 사람당 평생 1회만 세지만,
+    여기는 '지금'을 재야 하므로 날짜를 키에 넣어 하루 1회씩 다시 셉니다.
+    한 달 전에 한 번 본 사람이 오늘 순위를 계속 밀어 올리면 안 되기 때문입니다.
+    """
+
+    __tablename__ = "place_views"
+    __table_args__ = (
+        UniqueConstraint("place_id", "viewer_key", "viewed_on", name="uq_place_views"),
+    )
+
+    view_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    place_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("places.place_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # 로그인 사용자는 user_id, 비로그인은 브라우저가 만든 키
+    viewer_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    viewed_on: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+def record_place_view(session, *, place_id: int, viewer_key: str) -> bool:
+    """같은 사람이 같은 날 여러 번 봐도 한 번만 센다. 새로 셌으면 True.
+
+    조회 후 삽입하면 동시 요청 사이로 중복이 새므로, 삽입을 먼저 시도하고
+    UNIQUE 위반을 잡는 방식을 씁니다(커뮤니티 record_view와 같은 방식).
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    key = str(viewer_key or "").strip()[:80]
+    if not key:
+        return False
+    try:
+        with session.begin_nested():
+            session.add(
+                PlaceView(
+                    place_id=int(place_id),
+                    viewer_key=key,
+                    viewed_on=datetime.utcnow().date(),
+                    created_at=datetime.utcnow(),
+                )
+            )
+            session.flush()
+    except IntegrityError:
+        return False  # 오늘 이미 본 장소
+    return True

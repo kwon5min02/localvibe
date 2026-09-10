@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api import (
     auth_router,
     chat_router,
+    community_router,
     geocode_router,
     health_router,
     me_router,
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     api_app.include_router(places_router)
     api_app.include_router(search_router)
     api_app.include_router(chat_router)
+    api_app.include_router(community_router)
     api_app.include_router(auth_router)
     api_app.include_router(me_router)
     api_app.include_router(visual_router)

@@ -1,6 +1,7 @@
 from .routes import (
     auth_router,
     chat_router,
+    community_router,
     geocode_router,
     health_router,
     me_router,
@@ -13,6 +14,7 @@ from .routes import (
 __all__ = [
     "auth_router",
     "chat_router",
+    "community_router",
     "geocode_router",
     "health_router",
     "me_router",

@@ -459,6 +459,29 @@ export default function App() {
     [],
   );
 
+  /**
+   * 커뮤니티 탭으로 이동.
+   * postId를 주면 그 글을 연 상태로, q를 주면 검색어를 채운 목록으로 연다.
+   */
+  const goToCommunity = useCallback(
+    (postId, { q } = {}) => {
+      const params = new URLSearchParams();
+      params.set('tab', 'community');
+      if (postId != null) params.set('post', String(postId));
+      if (q) params.set('q', q);
+      navigate(`/main?${params.toString()}`);
+    },
+    [navigate],
+  );
+
+  const closeRegionModal = useCallback(() => {
+    setSelectedRegion(null);
+    setInsightRegion(null);
+    setModalCrawlImages([]);
+    setModalArticle(null);
+    setModalArticleLoading(false);
+  }, []);
+
   const handleAddToSpecificTrip = useCallback(
     async tripId => {
       if (!tripSelectRegion) return;
@@ -684,12 +707,7 @@ export default function App() {
                 setSelectedRegion(region);
                 setInsightRegion(null);
               }}
-              onGoCommunity={postId => {
-                const params = new URLSearchParams();
-                params.set('tab', 'community');
-                if (postId != null) params.set('post', String(postId));
-                navigate(`/main?${params.toString()}`);
-              }}
+              onGoCommunity={goToCommunity}
               currentUser={currentUser}
               onAddToTrip={handleRequestAddToTrip}
               regionMap={regionMap}
@@ -759,12 +777,10 @@ export default function App() {
         scrappedIds={scrappedIds}
         onToggleScrap={handleToggleScrap}
         onAddToTrip={handleRequestAddToTrip}
-        onClose={() => {
-          setSelectedRegion(null);
-          setInsightRegion(null);
-          setModalCrawlImages([]);
-          setModalArticle(null);
-          setModalArticleLoading(false);
+        onClose={closeRegionModal}
+        onGoCommunity={(postId, options) => {
+          closeRegionModal();
+          goToCommunity(postId, options);
         }}
       />
     </div>

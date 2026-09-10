@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.repositories import places_store
@@ -15,6 +15,25 @@ class PlaceCrawlBody(BaseModel):
 
     name: str | None = Field(None, description="검색 키워드에 쓸 장소명 (기본: PLACES.name)")
     region: str | None = Field(None, description="키워드 보강 (기본: PLACES.region)")
+
+
+@router.post("/{place_id}/view")
+def record_place_view(place_id: int, viewerKey: str = Query(..., min_length=1, max_length=80)):
+    """장소 상세를 열었다고 기록합니다. '지금 많이 찾는 장소' 집계에만 씁니다.
+
+    같은 사람이 같은 날 여러 번 열어도 한 번만 셉니다. 로그인 여부와 무관하게
+    브라우저가 만든 키를 쓰므로 인증은 요구하지 않습니다.
+    """
+    if not mysql_url_configured():
+        raise HTTPException(status_code=503, detail="MySQL(MYSQL_URL)이 설정되지 않았습니다.")
+    with session_scope() as session:
+        place = places_store.get_place_by_id(session, place_id)
+        if not place:
+            raise HTTPException(status_code=404, detail="장소를 찾을 수 없습니다.")
+        counted = places_store.record_place_view(
+            session, place_id=place_id, viewer_key=viewerKey
+        )
+    return {"counted": counted}
 
 
 @router.get("/{place_id}/article", response_model=PlaceArticleResponse)
